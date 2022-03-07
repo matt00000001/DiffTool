@@ -1,0 +1,16 @@
+### IntelliJ IDEA ###
+.idea/*
+!.idea/codeStyles
+!.idea/dictionaries
+!.idea/runConfigurations
+!.idea/scopes
+*.iws
+*.iml
+*.ipr
+out/
+
+## Gradle ##
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
