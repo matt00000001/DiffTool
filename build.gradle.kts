@@ -17,8 +17,9 @@ repositories {
 }
 
 dependencies {
-    implementation("info.picocli:picocli:4.6.2")
     implementation("commons-codec:commons-codec:1.15")
+    implementation("info.picocli:picocli:4.6.2")
+    implementation("org.apache.commons:commons-text:1.9")
 }
 
 application {
@@ -32,5 +33,13 @@ tasks.jar {
                          "Implementation-Version" to project.version))
     }
 
+    exclude("LICENSE.txt")
+    exclude("META-INF/LICENSE")
+    exclude("META-INF/LICENSE.txt")
+    exclude("NOTICE.txt")
+    exclude("META-INF/NOTICE")
+    exclude("META-INF/NOTICE.txt")
+
+    // This is used to make the jar fat.  log all the entries in the map below.
     from(configurations.runtimeClasspath.get().map({ if (it.isDirectory) it else zipTree(it) }))
 }
