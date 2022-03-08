@@ -8,7 +8,7 @@
 *.iml
 *.ipr
 out/
-
+	
 ## Gradle ##
 .gradle
 build/
