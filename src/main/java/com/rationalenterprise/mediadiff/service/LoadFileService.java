@@ -28,6 +28,9 @@ public class LoadFileService implements Callable<Integer> {
     @CommandLine.Option(names = "-datToJson", description = "Compare a dat and json.")
     boolean datToJson;
 
+    @CommandLine.Option(names = "-inventory", description = "Count rows.")
+    boolean inventory;
+
     /**
      * Diff two load files.
      *
@@ -40,12 +43,12 @@ public class LoadFileService implements Callable<Integer> {
             throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: -f1 does not exist", file1.toString()));
         }
 
-        if (!file2.toFile().exists()) {
+        if (!inventory && !file2.toFile().exists()) {
             throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: -f2 does not exist", file2.toString()));
         }
 
-        if (datToJson) {
-            checkMD5Only();
+        if (inventory) {
+            inventory();
         } else {
             compareDatFiles();
         }
@@ -53,7 +56,22 @@ public class LoadFileService implements Callable<Integer> {
         return 0;
     }
 
-    private void checkMD5Only() throws IOException {
+    private void inventory() throws IOException {
+
+        try (BufferedReader br = Files.newBufferedReader(file1, StandardCharsets.UTF_8)) {
+            String row = br.readLine();
+
+            int rowCount = 0;
+            while ((row = br.readLine()) != null) {
+                rowCount++;
+
+                if (rowCount % 500 == 0) {
+                    System.out.print("\rRow: " + rowCount);
+                }
+            }
+
+            System.out.println("Rows: " + rowCount + "                                                    ");
+        }
     }
 
     private void compareDatFiles() throws IOException {
@@ -62,14 +80,37 @@ public class LoadFileService implements Callable<Integer> {
         /*
         row counts
         compare headers
+            if there are missing headers, do any of them have values?
         compare the values for each document
             But there aren't document ids in common.  I'll need some other way of matching the rows in the 2 files.
-                maybe the hash and the paths?
+                maybe the hash and the paths? (hash and name).  But there are subdirectorires, so names aren't unique.
+        Media mm made a second subdirectory around 10k files.
+            to fix subdirectories, i need to go into the subdirectories and add those files to my list.  but the names are not guaranteed to be unique
+            across subdirectories.
+                for name comparison logic, if i get 2 of the same name the will both be in the list and when the loop that checks presence in other list
+                will check the other list multiple times.
+
+                if i put just the name in the list, i will not be able to access the file not knowing the subdirectory.  so i might need to put the
+                name, path, and hash in a map.
+
+                or i can report duplicate files and do nothing with them
+
+                for the non name check, there will just be a check of the number of times the hashes occur.
+                can the name check be changed to work based on hashes to fix the name issue?
+                explain what the name issue is...
+                    s1 contains a.txt s2 contains a.txt (a.txt is the same file)
+                    s1 contains a.txt s2 contains a.txt (a.txt is not the same file)
+                    name -> path -> hash
+                    name -> hash -> path
+                    hash -> path
+
+
+
          */
 
         List<String> header1;
 
-        try (BufferedReader br = new BufferedReader(new FileReader(file1.toFile(), StandardCharsets.UTF_8))) {
+        try (BufferedReader br = Files.newBufferedReader(file1, StandardCharsets.UTF_8)) {
             StringTokenizer t = new StringTokenizer("", Character.toChars(20)[0], Character.toChars(254)[0]);
             t.setIgnoreEmptyTokens(false);
 
