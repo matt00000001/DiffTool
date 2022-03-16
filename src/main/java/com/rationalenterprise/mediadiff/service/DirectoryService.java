@@ -79,7 +79,7 @@ public class DirectoryService implements Callable<Integer> {
         List<String> nativesWithoutText = new ArrayList<>();
 
         for (String name : names) {
-            if (!name.contains(EXTRACTED_TEXT_EXTENSION)) {
+            if (!name.endsWith(EXTRACTED_TEXT_EXTENSION)) {
                 String extractedTextPath = name.substring(0, name.lastIndexOf(".")) + EXTRACTED_TEXT_EXTENSION;
 
                 if (!names.contains(extractedTextPath)) {
@@ -157,7 +157,7 @@ public class DirectoryService implements Callable<Integer> {
             int extensionIndex = name.lastIndexOf(".");
             String extension = extensionIndex == -1 ? "" : name.substring(extensionIndex);
 
-            if (".txt".equals(extension) && name.contains(EXTRACTED_TEXT_EXTENSION)) {
+            if (".txt".equals(extension) && name.endsWith(EXTRACTED_TEXT_EXTENSION)) {
                 extensionCounts.put(EXTRACTED_TEXT_EXTENSION, extensionCounts.getOrDefault(EXTRACTED_TEXT_EXTENSION, 0) + 1);
             }
 
@@ -182,103 +182,81 @@ public class DirectoryService implements Callable<Integer> {
      *
      * If the extracted text files contain white spaces only, they will not be compared.
      *
-     * If the files are empty, then put the hash in empty file hashs set
+     * If the files are empty, then put the hash in empty file hashes set.
+     *
+     * There are pst and xls files that are off by one character.  So when the native is a pst or xls and the hash
+     * does not match, the file extension is checked and the size of the native is logged.
+     *
+     * To generalize this output to give insight into why the hashes are not are dont have matches
+     * if the hash comes from an extracted text the out put will be [extracted text, size, native: native.pst]
+     *
+     * put the name key and path value in a map, when the extracted text is checked in the intersection part,
+     * if the hashes dont match, check if it's an extracted text file, if it is, then print the
+     * file size, and native file
      */
     private void checkMD5Only() throws IOException {
-        List<String> d1Names = getSortedParentDepthNames(directory1);
-        List<String> d2Names = getSortedParentDepthNames(directory2);
+        List<String> d1Paths = getSortedParentDepthNames(directory1);
+        List<String> d2Paths = getSortedParentDepthNames(directory2);
 
-        System.out.println("-d1 paths found: " + d1Names.size());
-        System.out.println("-d2 paths found: " + d2Names.size());
+        System.out.println("-d1 paths found: " + d1Paths.size());
+        System.out.println("-d2 paths found: " + d2Paths.size());
 
-        LinkedHashMap<String, List<String>> d1HashToNames = new LinkedHashMap<>();
+        Map<String, String> d1NativeNameToPath = new HashMap<>();
+        LinkedHashMap<String, List<String>> d1HashToPaths = new LinkedHashMap<>();
 
-        int count = 0;
+        populateHashComparisonMaps(directory1, d1Paths, d1HashToPaths, d1NativeNameToPath);
 
-        for (String name : d1Names) {
-            count++;
+        Map<String, String> d2NativeNameToPath = new HashMap<>();
+        LinkedHashMap<String, List<String>> d2HashToPaths = new LinkedHashMap<>();
 
-            if (count % 100 == 0) {
-                System.out.print(String.format("\r-d1 hashes computed %s of %s", count, d1Names.size()));
-            }
+        populateHashComparisonMaps(directory2, d2Paths, d2HashToPaths, d2NativeNameToPath);
 
-            String hash = getMD5(directory1 + File.separator + name);
+        List<String> d1Only = new ArrayList<>(d1HashToPaths.keySet());
+        d1Only.removeAll(d2HashToPaths.keySet());
 
-            if (!d1HashToNames.containsKey(hash)) {
-                d1HashToNames.put(hash, new ArrayList<>());
-            }
+        boolean passed = logMissingHashes(directory1, d1NativeNameToPath, d1HashToPaths, d1Only);
 
-            d1HashToNames.get(hash).add(name);
+        List<String> d2Only = new ArrayList<>(d2HashToPaths.keySet());
+        d2Only.removeAll(d1HashToPaths.keySet());
 
-        }
-
-        System.out.print("\rFinished computing -d1 hashes.                                              \n");
-
-        LinkedHashMap<String, List<String>> d2HashToNames = new LinkedHashMap<>();
-
-        count = 0;
-
-        for (String name : d2Names) {
-            count++;
-
-            if (count % 100 == 0) {
-                System.out.print(String.format("\r-d2 hashes computed %s of %s", count, d1Names.size()));
-            }
-
-            String hash = getMD5(directory2 + File.separator + name);
-
-            if (!d2HashToNames.containsKey(hash)) {
-                d2HashToNames.put(hash, new ArrayList<>());
-            }
-
-            d2HashToNames.get(hash).add(name);
-        }
-
-        System.out.print("\rFinished computing -d2 hashes.                                              \n");
-
-        List<String> d1Only = new ArrayList<>(d1HashToNames.keySet());
-        d1Only.removeAll(d2HashToNames.keySet());
-
-        boolean passed = true;
-
-        if (!d1Only.isEmpty()) {
-            passed = false;
-
-            System.out.println(String.format("\nExists in -d1 only %s: ", d1Only.size()));
-
-            for (String hash : d1Only) {
-                System.out.println(String.format("\n%s (MD5): %s", hash, d1HashToNames.get(hash).stream().collect(Collectors.joining(", "))));
-            }
-        }
-
-        List<String> d2Only = new ArrayList<>(d2HashToNames.keySet());
-        d2Only.removeAll(d1HashToNames.keySet());
-
-        if (!d2Only.isEmpty()) {
-            passed = false;
-
-            System.out.println(String.format("\nExists in -d2 only %s: ", d2Only.size()));
-
-            for (String hash : d2Only) {
-                System.out.println(String.format("\n%s (MD5): %s\n", hash, d2HashToNames.get(hash).stream().collect(Collectors.joining(", "))));
-            }
-        }
+        passed = logMissingHashes(directory1, d2NativeNameToPath, d2HashToPaths, d2Only);
 
         String nonMatchingDuplicateCounts = "";
 
         // Log the non-matching counts found for the intersection of the hashes.
-        for (Map.Entry<String, List<String>> entry : d1HashToNames.entrySet()) {
-            if (d2HashToNames.containsKey(entry.getKey())) {
-                List<String> names = d2HashToNames.get(entry.getKey());
+        for (Map.Entry<String, List<String>> entry : d1HashToPaths.entrySet()) {
+            if (d2HashToPaths.containsKey(entry.getKey())) {
+                List<String> paths = d2HashToPaths.get(entry.getKey());
 
-                if (entry.getValue().size() != names.size()) {
-                    String files = entry.getValue().stream().map(name -> directory1.getFileName() + File.separator + name)
-                            .collect(Collectors.joining("\n"));
-                    files += "\n" + names.stream().map(name -> directory2.getFileName() + File.separator + name)
-                            .collect(Collectors.joining("\n")) + "\n";
+                if (entry.getValue().size() != paths.size()) {
+                    String files = "";
+
+                    for (String path : entry.getValue()) {
+                        if (path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
+                            long extractedTextSize = new File(directory1 + File.separator + path).length();
+                            int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
+                            String nativePath = d1NativeNameToPath.get(extensionIndex == -1 ? path : path.substring(0, extensionIndex));
+
+                            files += String.format("[%s, %s bytes, Native file: %s]\n", path, extractedTextSize, nativePath);
+                        } else {
+                            files += String.format("%s\n", path);
+                        }
+                    }
+
+                    for (String path : paths) {
+                        if (path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
+                            long extractedTextSize = new File(directory2 + File.separator + path).length();
+                            int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
+                            String nativePath = d2NativeNameToPath.get(extensionIndex == -1 ? path : path.substring(0, extensionIndex));
+
+                            files += String.format("[%s, %s bytes, Native file: %s]\n", path, extractedTextSize, nativePath);
+                        } else {
+                            files += String.format("%s\n", path);
+                        }
+                    }
 
                     nonMatchingDuplicateCounts += String.format("\n%s (MD5) has %s occurrences in -d1 and %s occurrences in -d2:\n%s",
-                            entry.getKey(), entry.getValue().size(), names.size(), files);
+                            entry.getKey(), entry.getValue().size(), paths.size(), files);
                 }
             }
         }
@@ -296,6 +274,71 @@ public class DirectoryService implements Callable<Integer> {
         }
     }
 
+    private boolean logMissingHashes(Path root, Map<String, String> nativeNameToPath, LinkedHashMap<String, List<String>> hashToPaths, List<String> exclusiveHashes) {
+        boolean passed = true;
+
+        if (!exclusiveHashes.isEmpty()) {
+            passed = false;
+
+            System.out.println(String.format("\nExists in -d1 only %s: ", exclusiveHashes.size()));
+
+            for (String hash : exclusiveHashes) {
+                String paths = "";
+
+                hashToPaths.get(hash).stream().map(path -> {
+                    if (path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
+                        long extractedTextSize = new File(root + File.separator + path).length();
+                        int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
+                        String nativePath = nativeNameToPath.get(extensionIndex == -1 ? path : path.substring(0, extensionIndex));
+
+                        return String.format("[%s, %s bytes, Native file: %s]\n", path, extractedTextSize, nativePath);
+                    } else {
+                        return path + "/n";
+                    }
+                }).collect(Collectors.joining());
+
+                System.out.println(String.format("\n%s (MD5):\n %s", hash, paths));
+            }
+        }
+
+        return passed;
+    }
+
+    /**
+     *
+     * @param paths
+     * @param nativeNameToPath
+     * @param hashToPaths
+     * @throws IOException
+     */
+    private void populateHashComparisonMaps(Path root, List<String> paths, Map<String, List<String>> hashToPaths, Map<String, String> nativeNameToPath) throws IOException {
+        int count = 0;
+
+        for (String path : paths) {
+            count++;
+
+            if (count % 100 == 0) {
+                System.out.print(String.format("\rComputed hashes: %s of %s", count, paths.size()));
+            }
+
+            if (!path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
+                int extensionIndex = path.lastIndexOf(".");
+
+                nativeNameToPath.put(extensionIndex == -1 ? path : path.substring(0, extensionIndex), path);
+            }
+
+            String hash = getMd5OrWhiteSpaceKey(root + File.separator + path);
+
+            if (!hashToPaths.containsKey(hash)) {
+                hashToPaths.put(hash, new ArrayList<>());
+            }
+
+            hashToPaths.get(hash).add(path);
+        }
+
+        System.out.print("\rFinished computing hashes.                                              \n");
+    }
+
     /**
      * This returns "WHITE_SPACE_ONLY_EXTRACTED_TEXT" for extracted text files that contain white space only.  All other files get the file's MD5 hash returned.
       */
@@ -303,8 +346,12 @@ public class DirectoryService implements Callable<Integer> {
         File file = new File(path);
         String MD5 = "";
 
-        if (file.getName().contains(EXTRACTED_TEXT_EXTENSION) && file.length() < 1000) {
+        if (file.getName().endsWith(EXTRACTED_TEXT_EXTENSION) && file.length() < 1000) {
             String fileContents = Files.readString(file.toPath());
+
+            if (!fileContents.isEmpty() && fileContents.charAt(0) == LoadFileService.UTF_8_BOM) {
+                fileContents = fileContents.substring(1);
+            }
 
             if (fileContents.isBlank()) {
                 MD5 = "WHITE_SPACE_ONLY_EXTRACTED_TEXT";
