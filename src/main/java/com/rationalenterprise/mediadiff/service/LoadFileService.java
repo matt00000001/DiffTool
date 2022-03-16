@@ -70,7 +70,7 @@ public class LoadFileService implements Callable<Integer> {
                 }
             }
 
-            System.out.println("Rows: " + rowCount + "                                                    ");
+            System.out.print("\rRows: " + rowCount + "                                                    ");
         }
     }
 

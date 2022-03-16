@@ -8,6 +8,7 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.Model.CommandSpec;
 
 import java.io.*;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.List;
@@ -21,16 +22,19 @@ public class DirectoryService implements Callable<Integer> {
     @Spec
     CommandSpec spec;
 
-    @Option(names = {"-d1"}, description = "The path to a directory.")
+    @Option(names = {"--directory1", "-d1"}, description = "The path to a directory.")
     private Path directory1;
 
-    @Option(names = {"-d2"}, description = "The path to a directory.")
+    @Option(names = {"--directory2", "-d2"}, description = "The path to a directory.")
     private Path directory2;
 
-    @Option(names = "-inventory", description = "Counts files.")
+    @Option(names = {"--inventory", "-i"}, description = "Counts files.")
     boolean inventory;
 
-    @Option(names = "-MD5", description = "Check MD5s only.")
+    @Option(names = {"--nativesWithoutText", "-n"}, description = "Finds natives without extracted text.")
+    boolean nativesWithoutText;
+
+    @Option(names = {"--MD5", "-m"}, description = "Check MD5s only.")
     boolean checkMD5Only;
 
     /**
@@ -61,6 +65,8 @@ public class DirectoryService implements Callable<Integer> {
             inventory();
         } else if (checkMD5Only) {
             checkMD5Only();
+        } else if (nativesWithoutText) {
+            findNativesWithoutText();
         } else {
             checkAll();
         }
@@ -68,35 +74,59 @@ public class DirectoryService implements Callable<Integer> {
         return 0;
     }
 
+    private void findNativesWithoutText() {
+        List<String> names = getSortedParentDepthNames(directory1);
+        List<String> nativesWithoutText = new ArrayList<>();
+
+        for (String name : names) {
+            if (!name.contains(EXTRACTED_TEXT_EXTENSION)) {
+                String extractedTextPath = name.substring(0, name.lastIndexOf(".")) + EXTRACTED_TEXT_EXTENSION;
+
+                if (!names.contains(extractedTextPath)) {
+                    nativesWithoutText.add(name);
+                }
+            }
+        }
+
+        if (!nativesWithoutText.isEmpty()) {
+            System.out.println("Natives without extracted text:");
+            for (String name : nativesWithoutText) {
+                System.out.println(name);
+            }
+        } else {
+            System.out.println("No natives without extracted text.");
+        }
+    }
+
     private void inventory() {
         LinkedHashMap<String, Integer> d1ExtensionCounts = getExtensionCounts(directory1);
         LinkedHashMap<String, Integer> d2ExtensionCounts = getExtensionCounts(directory2);
 
-        System.out.println("-d1 extensions:");
+        System.out.println("-d1:");
         for (Map.Entry<String, Integer> entry : d1ExtensionCounts.entrySet()) {
             System.out.println(String.format("Extension %s: %s", entry.getKey(), entry.getValue()));
         }
 
-        System.out.println("\n-d2 extensions:");
+        System.out.println("\n-d2:");
 
         for (Map.Entry<String, Integer> entry : d2ExtensionCounts.entrySet()) {
             System.out.println(String.format("Extension %s: %s", entry.getKey(), entry.getValue()));
         }
 
-        List<String> d1MinusD2 = new ArrayList<>(d1ExtensionCounts.keySet());
-        d1MinusD2.removeAll(d2ExtensionCounts.keySet());
-        List<String> d2MinusD1 = new ArrayList<>(d2ExtensionCounts.keySet());
-        d2MinusD1.removeAll(d1ExtensionCounts.keySet());
+        List<String> d1Only = new ArrayList<>(d1ExtensionCounts.keySet());
+        d1Only.removeAll(d2ExtensionCounts.keySet());
+        List<String> d2Only = new ArrayList<>(d2ExtensionCounts.keySet());
+        d2Only.removeAll(d1ExtensionCounts.keySet());
 
-        System.out.println();
+        System.out.println("\nDifferences:");
+        boolean different = !d1Only.isEmpty() || !d2Only.isEmpty();
 
-        // check this is ordered
-        for (String d1Only : d1MinusD2) {
-            System.out.println("Exists in -d1 only: " + d1Only);
+        for (String entry : d1Only) {
+            System.out.println("Exists in -d1 only: " + entry);
         }
 
-        for (String d2Only : d2MinusD1) {
-            System.out.println("Exists in -d1 only: " + d2Only);
+        for (String entry : d2Only) {
+            System.out.println("Exists in -d1 only: " + entry);
         }
 
         System.out.println();
@@ -104,25 +134,30 @@ public class DirectoryService implements Callable<Integer> {
         // Log the non-matching counts for the intersection.
         for (Map.Entry<String, Integer> entry : d1ExtensionCounts.entrySet()) {
             if (d2ExtensionCounts.containsKey(entry.getKey())) {
-                int count = d2ExtensionCounts.get(entry.getKey());
+                int d2Count = d2ExtensionCounts.get(entry.getKey());
 
-                if (entry.getValue() != count) {
-                    System.out.println(String.format("-d1 contins %s %s and -d2 contains %s %s", entry.getKey(), entry.getValue(), entry.getKey(), count));
+                if (entry.getValue() != d2Count) {
+                    different = true;
+                    System.out.println(String.format("-d1 contins %s %s and -d2 contains %s %s", entry.getValue(), entry.getKey(), d2Count, entry.getKey()));
                 }
             }
+        }
+
+        if (!different) {
+            System.out.println("None");
         }
 
         System.out.println("\nTests complete.");
     }
 
     private LinkedHashMap<String, Integer> getExtensionCounts(Path directory) {
-        LinkedHashMap<String, Integer> extensionCounts = new LinkedHashMap<>();
+        Map<String, Integer> extensionCounts = new HashMap<>();
 
-        for (String name : getSortedNames(directory)) {
+        for (String name : getSortedParentDepthNames(directory)) {
             int extensionIndex = name.lastIndexOf(".");
             String extension = extensionIndex == -1 ? "" : name.substring(extensionIndex);
 
-            if ("txt".equals(extension) && name.contains(EXTRACTED_TEXT_EXTENSION)) {
+            if (".txt".equals(extension) && name.contains(EXTRACTED_TEXT_EXTENSION)) {
                 extensionCounts.put(EXTRACTED_TEXT_EXTENSION, extensionCounts.getOrDefault(EXTRACTED_TEXT_EXTENSION, 0) + 1);
             }
 
@@ -144,13 +179,17 @@ public class DirectoryService implements Callable<Integer> {
     /**
      * Checks the contents to one subdirectory deep.  The hashes must occur the same number of times in each directory.
      * Logs the missing hashes and hashes that don't pass along with the file paths.
+     *
+     * If the extracted text files contain white spaces only, they will not be compared.
+     *
+     * If the files are empty, then put the hash in empty file hashs set
      */
     private void checkMD5Only() throws IOException {
-        List<String> d1Names = getSortedNames(directory1);
-        List<String> d2Names = getSortedNames(directory2);
+        List<String> d1Names = getSortedParentDepthNames(directory1);
+        List<String> d2Names = getSortedParentDepthNames(directory2);
 
-        System.out.println("-d1 count: " + d1Names.size());
-        System.out.println("-d2 count: " + d2Names.size());
+        System.out.println("-d1 paths found: " + d1Names.size());
+        System.out.println("-d2 paths found: " + d2Names.size());
 
         LinkedHashMap<String, List<String>> d1HashToNames = new LinkedHashMap<>();
 
@@ -160,18 +199,17 @@ public class DirectoryService implements Callable<Integer> {
             count++;
 
             if (count % 100 == 0) {
-                System.out.print(String.format("-\rd1 hashes computed %s of %s", count, d1Names.size()));
+                System.out.print(String.format("\r-d1 hashes computed %s of %s", count, d1Names.size()));
             }
 
-            try (InputStream fileInputStream = new FileInputStream(directory1 + File.separator + name)) {
-                String hash = DigestUtils.md5Hex(fileInputStream);
+            String hash = getMD5(directory1 + File.separator + name);
 
-                if (!d1HashToNames.containsKey(hash)) {
-                    d1HashToNames.put(hash, new ArrayList<>());
-                }
-
-                d1HashToNames.get(hash).add(name);
+            if (!d1HashToNames.containsKey(hash)) {
+                d1HashToNames.put(hash, new ArrayList<>());
             }
+
+            d1HashToNames.get(hash).add(name);
+
         }
 
         System.out.print("\rFinished computing -d1 hashes.                                              \n");
@@ -187,43 +225,41 @@ public class DirectoryService implements Callable<Integer> {
                 System.out.print(String.format("\r-d2 hashes computed %s of %s", count, d1Names.size()));
             }
 
-            try (InputStream fileInputStream = new FileInputStream(directory2 + File.separator + name)) {
-                String hash = DigestUtils.md5Hex(fileInputStream);
+            String hash = getMD5(directory2 + File.separator + name);
 
-                if (!d2HashToNames.containsKey(hash)) {
-                    d2HashToNames.put(hash, new ArrayList<>());
-                }
-
-                d2HashToNames.get(hash).add(name);
+            if (!d2HashToNames.containsKey(hash)) {
+                d2HashToNames.put(hash, new ArrayList<>());
             }
+
+            d2HashToNames.get(hash).add(name);
         }
 
-        System.out.print("\rFinished computing -2 hashes.                                              \n");
+        System.out.print("\rFinished computing -d2 hashes.                                              \n");
 
-        List<String> d1MinusD2 = new ArrayList<>(d1HashToNames.keySet());
-        d1MinusD2.removeAll(d2HashToNames.keySet());
+        List<String> d1Only = new ArrayList<>(d1HashToNames.keySet());
+        d1Only.removeAll(d2HashToNames.keySet());
 
         boolean passed = true;
 
-        if (!d1MinusD2.isEmpty()) {
+        if (!d1Only.isEmpty()) {
             passed = false;
 
-            System.out.println(String.format("\nExists in -d1 only %s: ", d1MinusD2.size()));
+            System.out.println(String.format("\nExists in -d1 only %s: ", d1Only.size()));
 
-            for (String hash : d1MinusD2) {
+            for (String hash : d1Only) {
                 System.out.println(String.format("\n%s (MD5): %s", hash, d1HashToNames.get(hash).stream().collect(Collectors.joining(", "))));
             }
         }
 
-        List<String> d2MinusD1 = new ArrayList<>(d2HashToNames.keySet());
-        d2MinusD1.removeAll(d1HashToNames.keySet());
+        List<String> d2Only = new ArrayList<>(d2HashToNames.keySet());
+        d2Only.removeAll(d1HashToNames.keySet());
 
-        if (!d2MinusD1.isEmpty()) {
+        if (!d2Only.isEmpty()) {
             passed = false;
 
-            System.out.println(String.format("\nExists in -d2 only %s: ", d2MinusD1.size()));
+            System.out.println(String.format("\nExists in -d2 only %s: ", d2Only.size()));
 
-            for (String hash : d2MinusD1) {
+            for (String hash : d2Only) {
                 System.out.println(String.format("\n%s (MD5): %s\n", hash, d2HashToNames.get(hash).stream().collect(Collectors.joining(", "))));
             }
         }
@@ -261,44 +297,74 @@ public class DirectoryService implements Callable<Integer> {
     }
 
     /**
+     * This returns "WHITE_SPACE_ONLY_EXTRACTED_TEXT" for extracted text files that contain white space only.  All other files get the file's MD5 hash returned.
+      */
+    private String getMd5OrWhiteSpaceKey(String path) throws IOException {
+        File file = new File(path);
+        String MD5 = "";
+
+        if (file.getName().contains(EXTRACTED_TEXT_EXTENSION) && file.length() < 1000) {
+            String fileContents = Files.readString(file.toPath());
+
+            if (fileContents.isBlank()) {
+                MD5 = "WHITE_SPACE_ONLY_EXTRACTED_TEXT";
+            }
+        }
+
+        if (MD5.isEmpty()){
+            try (InputStream fileInputStream = new FileInputStream(path)) {
+                MD5 = DigestUtils.md5Hex(fileInputStream);
+            }
+        }
+
+        return MD5;
+    }
+
+    private String getMD5(String path) throws IOException {
+        try (InputStream fileInputStream = new FileInputStream(path)) {
+            return DigestUtils.md5Hex(fileInputStream);
+        }
+    }
+
+    /**
      * Check the contents to one subdirectory deep.  The subdirectory and file name and hash of the file are required to match to pass.
      * Missing files and files that don't pass will be logged.
      */
     private void checkAll() {
-        List<String> d1Names = getSortedNames(directory1);
-        List<String> d2Names = getSortedNames(directory2);
+        List<String> d1Names = getSortedParentDepthNames(directory1);
+        List<String> d2Names = getSortedParentDepthNames(directory2);
 
         System.out.println("-d1 file count: " + d1Names.size());
         System.out.println("-d2 file count: " + d2Names.size());
 
         List<String> d1AndD2Intersection = d1Names.stream().filter(d2Names::contains).collect(Collectors.toList());
 
-        List<String> d1MinusD2 = new ArrayList<>(d1Names);
-        d1MinusD2.removeAll(d2Names);
+        List<String> d1Only = new ArrayList<>(d1Names);
+        d1Only.removeAll(d2Names);
 
         boolean passed = true;
 
-        if (!d1MinusD2.isEmpty()) {
+        if (!d1Only.isEmpty()) {
             passed = false;
 
-            System.out.println(String.format("\nExists in -d1 only %s: ", d1MinusD2.size()));
+            System.out.println(String.format("\nExists in -d1 only %s: ", d1Only.size()));
 
             // this blew up the console
-//            for (String d1Only : d1MinusD2) {
+//            for (String d1Only : d1Only) {
 //                System.out.println(d1Only);
 //            }
         }
 
-        List<String> d2MinusD1 = new ArrayList<>(d2Names);
-        d2MinusD1.removeAll(d1Names);
+        List<String> d2Only = new ArrayList<>(d2Names);
+        d2Only.removeAll(d1Names);
 
-        if (!d2MinusD1.isEmpty()) {
+        if (!d2Only.isEmpty()) {
             passed = false;
 
-            System.out.println(String.format("\nExists in -d2 only %s: ", d2MinusD1.size()));
+            System.out.println(String.format("\nExists in -d2 only %s: ", d2Only.size()));
 
             // this blew up the console
-//            for (String d2Only : d2MinusD1) {
+//            for (String d2Only : d2Only) {
 //                System.out.println(d2Only);
 //            }
         }
@@ -345,7 +411,7 @@ public class DirectoryService implements Callable<Integer> {
      * @param path
      * @return
      */
-    private List<String> getSortedNames(Path path) {
+    private List<String> getSortedParentDepthNames(Path path) {
         List<String> names = new ArrayList<>();
 
         for (File file : path.toFile().listFiles()) {
