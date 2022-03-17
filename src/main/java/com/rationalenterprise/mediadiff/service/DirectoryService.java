@@ -167,7 +167,16 @@ public class DirectoryService implements Callable<Integer> {
         LinkedHashMap<String, Integer> sortedExtensionCounts = new LinkedHashMap<>();
         List<String> sortedExtensions = new ArrayList<>(extensionCounts.keySet());
 
-        sortedExtensions.sort((n1, n2) -> n1.compareToIgnoreCase(n2));
+        sortedExtensions.sort((n1, n2) -> {
+            int compareTo = n1.compareToIgnoreCase(n2);
+
+            if (compareTo == 0) {
+                compareTo = n1.compareTo(n2);
+            }
+
+            return compareTo;
+        });
+
 
         for (String extension : sortedExtensions) {
             sortedExtensionCounts.put(extension, extensionCounts.get(extension));
@@ -471,7 +480,16 @@ public class DirectoryService implements Callable<Integer> {
             }
         }
 
-        names.sort((n1, n2) -> n1.compareToIgnoreCase(n2));
+        names.sort((n1, n2) -> {
+            int compareTo = n1.compareToIgnoreCase(n2);
+
+            if (compareTo == 0) {
+                compareTo = n1.compareTo(n2);
+            }
+
+            return compareTo;
+        });
+
 
         return names;
     }
