@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
-@Command(name = "directory", description = "Diff two directories")
+@Command(name = "directory", description = "Diff directories")
 public class DirectoryService implements Callable<Integer> {
     public static String EXTRACTED_TEXT_EXTENSION = "_extracted.txt";
 
@@ -38,7 +38,7 @@ public class DirectoryService implements Callable<Integer> {
     boolean checkMD5Only;
 
     /**
-     * Diff two directories.
+     * Diff directories.
      *
      * @return
      * @throws Exception
@@ -228,7 +228,7 @@ public class DirectoryService implements Callable<Integer> {
         List<String> d2Only = new ArrayList<>(d2HashToPaths.keySet());
         d2Only.removeAll(d1HashToPaths.keySet());
 
-        passed = logMissingHashes(directory1, d2NativeNameToPath, d2HashToPaths, d2Only);
+        passed = logMissingHashes(directory2, d2NativeNameToPath, d2HashToPaths, d2Only);
 
         String nonMatchingDuplicateCounts = "";
 
@@ -292,9 +292,7 @@ public class DirectoryService implements Callable<Integer> {
             System.out.println(String.format("\nExists in -d1 only %s: ", exclusiveHashes.size()));
 
             for (String hash : exclusiveHashes) {
-                String paths = "";
-
-                hashToPaths.get(hash).stream().map(path -> {
+                String paths = hashToPaths.get(hash).stream().map(path -> {
                     if (path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
                         long extractedTextSize = new File(root + File.separator + path).length();
                         int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
@@ -489,7 +487,6 @@ public class DirectoryService implements Callable<Integer> {
 
             return compareTo;
         });
-
 
         return names;
     }
