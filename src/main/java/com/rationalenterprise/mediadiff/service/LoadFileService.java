@@ -109,7 +109,9 @@ public class LoadFileService implements Callable<Integer> {
     }
 
     private void inventoryColumn() throws IOException {
-        compareInventoryCounts(getValueToCountMap(file1, headerName), getValueToCountMap(file2, headerName));
+        Map<String, List<String>> f1ValueToPaths = new HashMap<>();
+        Map<String, List<String>> f2ValueToPaths = new HashMap<>();
+        compareInventoryCounts(getValueToCountMap(file1, headerName, f1ValueToPaths), getValueToCountMap(file2, headerName, f2ValueToPaths), f1ValueToPaths, f2ValueToPaths);
 
         System.out.println("Test complete.");
     }
@@ -125,7 +127,7 @@ public class LoadFileService implements Callable<Integer> {
             System.out.println(String.format("\nFound only in -f1 (%s):", f1MinusF2.size()));
 
             for (String f1Only : f1MinusF2) {
-                System.out.println(String.format("(%s) %s\n", f1ValuesToCount.get(f1Only), f1Only));
+                System.out.println(String.format("(%s) %s", f1ValuesToCount.get(f1Only), f1Only.isBlank() ? "[blank string]" : f1Only));
             }
         }
 
@@ -133,7 +135,7 @@ public class LoadFileService implements Callable<Integer> {
             System.out.println(String.format("\nFound only in -f2 (%s):", f2MinusF1.size()));
 
             for (String f2Only : f2MinusF1) {
-                System.out.println(String.format("(%s) %s\n", f2ValuesToCount.get(f2Only), f2Only));
+                System.out.println(String.format("(%s) %s", f2ValuesToCount.get(f2Only), f2Only.isBlank() ? "[blank string]" : f2Only));
             }
         }
 
@@ -144,28 +146,110 @@ public class LoadFileService implements Callable<Integer> {
         intersection.removeAll(f1MinusF2);
         intersection.removeAll(f2MinusF1);
 
+        List<String> intersectionList = new ArrayList<>(intersection);
+        intersectionList.sort((h1, h2) -> {
+            int compareTo = h1.compareToIgnoreCase(h2);
+
+            if (compareTo == 0) {
+                compareTo = h1.compareTo(h2);
+            }
+
+            return compareTo;
+        });
+
         if (!(f1MinusF2.size() == f1ValuesToCount.size() && f2MinusF1.size() == f2ValuesToCount.size())) {
-            System.out.println(String.format("\nIntersection comparison (%s):", intersection.size()));
-            boolean intersectionDifference = false;
+            System.out.println(String.format("\nIntersection comparison (%s):", intersectionList.size()));
+            String countsMatch = "";
+            String countsDoNotMatch = "";
 
-            for (Map.Entry<String, Integer> entry : f1ValuesToCount.entrySet()) {
-                if (f2ValuesToCount.containsKey(entry.getKey())) {
-                    if (!f1ValuesToCount.get(entry.getKey()).equals(f2ValuesToCount.get(entry.getKey()))) {
-                        intersectionDifference = true;
-
-                        System.out.println(String.format("-f1 (%s) %s, -f2 (%s) %s",
-                                f1ValuesToCount.get(entry.getKey()), entry.getKey(), f2ValuesToCount.get(entry.getKey()), entry.getKey()));
-                    }
+            for (String key : intersectionList) {
+                String keyLabel = key.isBlank() ? "[blank string]" : key;
+                if (!f1ValuesToCount.get(key).equals(f2ValuesToCount.get(key))) {
+                    countsDoNotMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
+                } else {
+                    countsMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
                 }
             }
 
-            if (!intersectionDifference) {
-                System.out.println("Intersections match.");
+            if (!countsDoNotMatch.isEmpty()) {
+                System.out.println("Non-matching:\n" + countsDoNotMatch);
+            }
+
+            if (!countsMatch.isEmpty()) {
+                System.out.println("Matching:\n" + countsMatch);
             }
         }
     }
 
-    private LinkedHashMap<String, Integer> getValueToCountMap(Path metadataPath, String headerName) throws IOException {
+    private void compareInventoryCounts(LinkedHashMap<String, Integer> f1ValuesToCount, LinkedHashMap<String, Integer> f2ValuesToCount,
+                                        Map<String, List<String>> f1ValueToPaths, Map<String, List<String>> f2ValueToPaths) {
+        List<String> f1MinusF2 = new ArrayList<>(f1ValuesToCount.keySet());
+        f1MinusF2.removeAll(f2ValuesToCount.keySet());
+
+        List<String> f2MinusF1 = new ArrayList<>(f2ValuesToCount.keySet());
+        f2MinusF1.removeAll(f1ValuesToCount.keySet());
+
+        if (!f1MinusF2.isEmpty()) {
+            System.out.println(String.format("\nFound only in -f1 (%s):", f1MinusF2.size()));
+
+            for (String f1Only : f1MinusF2) {
+                System.out.println(String.format("(%s) %s, Paths: [%s]", f1ValuesToCount.get(f1Only), f1Only.isBlank() ? "[blank string]" : f1Only,
+                        f1ValueToPaths.get(f1Only).stream().collect(Collectors.joining(","))));
+            }
+        }
+
+        if (!f2MinusF1.isEmpty()) {
+            System.out.println(String.format("\nFound only in -f2 (%s):", f2MinusF1.size()));
+
+            for (String f2Only : f2MinusF1) {
+                System.out.println(String.format("(%s) %s, Paths: [%s]", f2ValuesToCount.get(f2Only), f2Only.isBlank() ? "[blank string]" : f2Only,
+                        f2ValueToPaths.get(f2Only).stream().collect(Collectors.joining(","))));
+            }
+        }
+
+        Set<String> intersection = new HashSet<>();
+        intersection.addAll(f1ValuesToCount.keySet());
+        intersection.addAll(f2ValuesToCount.keySet());
+
+        intersection.removeAll(f1MinusF2);
+        intersection.removeAll(f2MinusF1);
+
+        List<String> intersectionList = new ArrayList<>(intersection);
+        intersectionList.sort((h1, h2) -> {
+            int compareTo = h1.compareToIgnoreCase(h2);
+
+            if (compareTo == 0) {
+                compareTo = h1.compareTo(h2);
+            }
+
+            return compareTo;
+        });
+
+        if (!(f1MinusF2.size() == f1ValuesToCount.size() && f2MinusF1.size() == f2ValuesToCount.size())) {
+            System.out.println(String.format("\nIntersection comparison (%s):", intersectionList.size()));
+            String countsMatch = "";
+            String countsDoNotMatch = "";
+
+            for (String key : intersectionList) {
+                String keyLabel = key.isBlank() ? "[blank string]" : key;
+                if (!f1ValuesToCount.get(key).equals(f2ValuesToCount.get(key))) {
+                    countsDoNotMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
+                } else {
+                    countsMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
+                }
+            }
+
+            if (!countsDoNotMatch.isEmpty()) {
+                System.out.println("Non-matching:\n" + countsDoNotMatch);
+            }
+
+            if (!countsMatch.isEmpty()) {
+                System.out.println("Matching:\n" + countsMatch);
+            }
+        }
+    }
+
+    private LinkedHashMap<String, Integer> getValueToCountMap(Path metadataPath, String headerName, Map<String, List<String>> valueToPath) throws IOException {
         LinkedHashMap<String, Integer> valueToCount = new LinkedHashMap<>();
 
         try (BufferedReader br = Files.newBufferedReader(metadataPath, StandardCharsets.UTF_8)) {
@@ -177,7 +261,6 @@ public class LoadFileService implements Callable<Integer> {
 
             StringTokenizer t = new StringTokenizer("", Character.toChars(20)[0], Character.toChars(254)[0]).setIgnoreEmptyTokens(false);
 
-            String headerString = row; // delete
             List<String> header = Arrays.asList(t.reset(row).getTokenArray());
 
             if (Collections.frequency(header, headerName) != 1) {
@@ -185,14 +268,24 @@ public class LoadFileService implements Callable<Integer> {
 
             int columnIndex = header.lastIndexOf(headerName);
 
+            int pathIndex = -1;
+
+            if (Collections.frequency(header,"PATH") == 1) {
+                pathIndex = header.lastIndexOf("PATH");
+            } else if (Collections.frequency(header,"NATIVE_PATH") == 1) {
+                pathIndex = header.lastIndexOf("NATIVE_PATH");
+            }
+
             while ((row = br.readLine()) != null) {
                 String[] values = t.reset(row).getTokenArray();
 
-                if (values[columnIndex].contains("?")) { // delete
-                    System.out.println(headerString + "\n" + row);
-                    break;
-                }
                 valueToCount.put(values[columnIndex], valueToCount.getOrDefault(values[columnIndex], 0) + 1);
+
+                if (!valueToPath.containsKey(values[columnIndex])) {
+                    valueToPath.put(values[columnIndex], new ArrayList<>());
+                } else {
+                    valueToPath.get(values[columnIndex]).add(values[pathIndex]);
+                }
             }
         }
 
@@ -236,16 +329,9 @@ public class LoadFileService implements Callable<Integer> {
 
                 String[] values = t.reset(row).getTokenArray();
 
-                if (header.size() != values.length) {
-                    // throw an exception
-                    System.out.println(String.format("Row #%s column count does not match header: %s row columns, %s header columns", count, values.length, header.size()));
-                } else {
-                    for (int i = 0; i < values.length; i++) {
-                        if (!values[i].isBlank()) {
-                            headerToCount.put(header.get(i), headerToCount.get(header.get(i)) + 1);
-                        } else if (header.get(i).equals("RAWSIZE") && values[i].isBlank()) {
-                            System.out.println(row);
-                        }
+                for (int i = 0; i < values.length; i++) {
+                    if (!values[i].isBlank()) {
+                        headerToCount.put(header.get(i), headerToCount.get(header.get(i)) + 1);
                     }
                 }
             }
@@ -525,10 +611,6 @@ public class LoadFileService implements Callable<Integer> {
             t.setIgnoreEmptyTokens(false);
 
             List<String> header = Arrays.asList(t.reset(row).getTokenArray());
-
-            /*
-            Collections.frequency(list, key));
-             */
             int headerIndex = header.indexOf(headerName);
             List<String> rows = new ArrayList<>();
             int count = 0;
@@ -538,13 +620,8 @@ public class LoadFileService implements Callable<Integer> {
 
                 String[] values = t.reset(row).getTokenArray();
 
-                if (header.size() != values.length) {
-                    // throw an exception
-                    System.out.println(String.format("Row #%s column count does not match header: %s row columns, %s header columns", count, values.length, header.size()));
-                } else {
-                    if (values[headerIndex].isBlank()) {
-                        rows.add(row);
-                    }
+                if (values[headerIndex].isBlank()) {
+                    rows.add(row);
                 }
             }
 
@@ -576,22 +653,13 @@ public class LoadFileService implements Callable<Integer> {
             int headerIndex = header.indexOf(headerName);
             int MD5Index = header.indexOf("MD5SUM");
 
-            int count = 0;
-
             while ((row = br.readLine()) != null) {
-                count++;
-
                 String[] values = t.reset(row).getTokenArray();
 
-                if (header.size() != values.length) {
-                    // throw an exception
-                    System.out.println(String.format("Row #%s column count does not match header: %s row columns, %s header columns", count, values.length, header.size()));
+                if (!values[headerIndex].isBlank()) {
+                    f1HasValue.add(values[MD5Index].isBlank() ? "[Blank MD5]" : values[MD5Index]);
                 } else {
-                    if (!values[headerIndex].isBlank()) {
-                        f1HasValue.add(values[MD5Index]);
-                    } else {
-                        f1HasNoValue.add(values[MD5Index]);
-                    }
+                    f1HasNoValue.add(values[MD5Index].isBlank() ? "[Blank MD5]" : values[MD5Index]);
                 }
             }
 
@@ -604,6 +672,7 @@ public class LoadFileService implements Callable<Integer> {
 
         Set<String> f2HasValue = new HashSet<>();
         Set<String> f2HasNoValue = new HashSet<>();
+
         try (BufferedReader br = Files.newBufferedReader(file2, StandardCharsets.UTF_8)) {
             String row = br.readLine();
 
@@ -619,22 +688,13 @@ public class LoadFileService implements Callable<Integer> {
             int headerIndex = header.indexOf(headerName);
             int MD5Index = header.indexOf("MD5SUM");
 
-            int count = 0;
-
             while ((row = br.readLine()) != null) {
-                count++;
-
                 String[] values = t.reset(row).getTokenArray();
 
-                if (header.size() != values.length) {
-                    // throw an exception
-                    System.out.println(String.format("Row #%s column count does not match header: %s row columns, %s header columns", count, values.length, header.size()));
+                if (!values[headerIndex].isBlank()) {
+                    f2HasValue.add(values[MD5Index].isBlank() ? "[Blank MD5]" : values[MD5Index]);
                 } else {
-                    if (!values[headerIndex].isBlank()) {
-                        f2HasValue.add(values[MD5Index]);
-                    } else {
-                        f2HasNoValue.add(values[MD5Index]);
-                    }
+                    f2HasNoValue.add(values[MD5Index].isBlank() ? "[Blank MD5]" : values[MD5Index]);
                 }
             }
 
