@@ -25,7 +25,6 @@ class MediaDiffApplication implements Callable<Integer> {
     }
 
     public static void main(String... args) {
-        // todo add help command for subdirectories.
         int exitCode = new CommandLine(new MediaDiffApplication()).execute(args);
         System.exit(exitCode);
     }

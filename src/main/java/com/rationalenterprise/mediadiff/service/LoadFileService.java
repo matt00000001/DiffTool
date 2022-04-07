@@ -25,6 +25,9 @@ public class LoadFileService implements Callable<Integer> {
     @CommandLine.Option(names = {"-f2"}, description = "The path to a load file.")
     private Path file2;
 
+    @CommandLine.Option(names = "-cr", description = "Count rows.")
+    private boolean countRows;
+
     @CommandLine.Option(names = "-ch", description = "Compare hashes.")
     private boolean compareHashes;
 
@@ -32,22 +35,37 @@ public class LoadFileService implements Callable<Integer> {
     private boolean datToJson;
 
     @CommandLine.Option(names = "-i", description = "Display value counts for all headers.  Compare the headers found in both load files.")
-    private boolean inventory;
+    private boolean countHasValues;
 
-    @CommandLine.Option(names = "-ic", description = "Compare value counts for a column found in both load files.")
-    private boolean inventoryColumn;
+    @CommandLine.Option(names = "-ic", description = "Compare value counts load files for header -h.")
+    private boolean countValueOccurences;
+
+    @CommandLine.Option(names = "--full-comparison", description = "Compare the load files down to the value occurrences.")
+    private boolean fullComparison;
 
     @CommandLine.Option(names = "-v", description = "Find rows with values for header -h.")
-    private boolean findValues;
+    private boolean findHasValues;
+
+    @CommandLine.Option(names = "--substring", description = "Substring used to find values for header -h.")
+    private String substring = "";
 
     @CommandLine.Option(names = "-nv", description = "Find rows without values for header -h.")
-    private boolean findRowsWithoutValues;
+    private boolean findNotHasValues;
 
     @CommandLine.Option(names = "-h", description = "Header name.")
     private String headerName;
 
     @CommandLine.Option(names = "-chv", description = "Compare has value by hashes.")
     private boolean compareHasValueByHashes;
+
+    @CommandLine.Option(names = "-pr", description = "Print row. Use -h and --value to search for the rows to print.")
+    private boolean printRow;
+
+    @CommandLine.Option(names = "-p", description = "Used with -n and -nv to print the rows found.")
+    private boolean print;
+
+    @CommandLine.Option(names = "--value", description = "Value.")
+    private String value;
 
     /**
      * Diff two load files.
@@ -61,15 +79,15 @@ public class LoadFileService implements Callable<Integer> {
             throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: -f1 does not exist", file1.toString()));
         }
 
-        if (!(inventory || inventoryColumn || findValues) && !file2.toFile().exists()) {
+        if (!(countHasValues || countValueOccurences || findHasValues) && !file2.toFile().exists()) {
             throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: -f2 does not exist", file2.toString()));
         }
 
-        if (findValues && (headerName == null ||  headerName.isBlank())) {
+        if (findHasValues && (headerName == null ||  headerName.isBlank())) {
             throw new CommandLine.ParameterException(spec.commandLine(), String.format("-h must be a header name", file2.toString()));
         }
 
-        if (findRowsWithoutValues && (headerName == null ||  headerName.isBlank())) {
+        if (findNotHasValues && (headerName == null ||  headerName.isBlank())) {
             throw new CommandLine.ParameterException(spec.commandLine(), String.format("-h must be a header name", file2.toString()));
         }
 
@@ -77,23 +95,42 @@ public class LoadFileService implements Callable<Integer> {
             throw new CommandLine.ParameterException(spec.commandLine(), String.format("-h must be a header name", file2.toString()));
         }
 
-        if (inventory) {
-            inventory();
-        } else if (inventoryColumn) {
-            inventoryColumn();
+        if (countRows) {
+            countRows();
+        } else if (countHasValues) {
+            countHasValues();
+        } else if (countValueOccurences) {
+            countValueOccurrences();
+        } else if (fullComparison) {
+            fullComparison();
         } else if (compareHashes) {
             compareMD5SUMs();
         } else if (compareHasValueByHashes) {
             compareHasValueByHashes();
-        } else if (findValues) {
-            countRowsWithValue();
-        } else if (findRowsWithoutValues) {
-            countRowsWithoutValue();
+        } else if (findHasValues) {
+            findHasValues(true);
+        } else if (findNotHasValues) {
+            findHasValues(false);
+        } else if (printRow) {
+            printRow();
         } else {
             compareDatFiles();
         }
 
         return 0;
+    }
+
+    private void countRows() throws IOException {
+        try (BufferedReader br = Files.newBufferedReader(file1, StandardCharsets.UTF_8)) {
+            String row;
+            int rowCount = 0;
+
+            while ((row = br.readLine()) != null) {
+                rowCount++;
+            }
+
+            System.out.println("Row count: " + rowCount);
+        }
     }
 
     /*
@@ -102,151 +139,20 @@ public class LoadFileService implements Callable<Integer> {
     - verify rows match md5 comparison
     - find missing rows (include (has values) info)
      */
-    private void inventory() throws IOException {
+    private void countHasValues() throws IOException {
         compareInventoryCounts(getHeaderToCountMap(file1), getHeaderToCountMap(file2));
 
         System.out.println("Test complete.");
     }
 
-    private void inventoryColumn() throws IOException {
+    private void countValueOccurrences() throws IOException {
+        System.out.println("Inventory for column: " + headerName);
+
         Map<String, List<String>> f1ValueToPaths = new HashMap<>();
         Map<String, List<String>> f2ValueToPaths = new HashMap<>();
-        compareInventoryCounts(getValueToCountMap(file1, headerName, f1ValueToPaths), getValueToCountMap(file2, headerName, f2ValueToPaths), f1ValueToPaths, f2ValueToPaths);
+        compareInventoryCounts(getValueToCountMap(file1, headerName, f1ValueToPaths), getValueToCountMap(file2, headerName, f2ValueToPaths), f1ValueToPaths, f2ValueToPaths, true);
 
-        System.out.println("Test complete.");
-    }
-
-    private void compareInventoryCounts(LinkedHashMap<String, Integer> f1ValuesToCount, LinkedHashMap<String, Integer> f2ValuesToCount) {
-        List<String> f1MinusF2 = new ArrayList<>(f1ValuesToCount.keySet());
-        f1MinusF2.removeAll(f2ValuesToCount.keySet());
-
-        List<String> f2MinusF1 = new ArrayList<>(f2ValuesToCount.keySet());
-        f2MinusF1.removeAll(f1ValuesToCount.keySet());
-
-        if (!f1MinusF2.isEmpty()) {
-            System.out.println(String.format("\nFound only in -f1 (%s):", f1MinusF2.size()));
-
-            for (String f1Only : f1MinusF2) {
-                System.out.println(String.format("(%s) %s", f1ValuesToCount.get(f1Only), f1Only.isBlank() ? "[blank string]" : f1Only));
-            }
-        }
-
-        if (!f2MinusF1.isEmpty()) {
-            System.out.println(String.format("\nFound only in -f2 (%s):", f2MinusF1.size()));
-
-            for (String f2Only : f2MinusF1) {
-                System.out.println(String.format("(%s) %s", f2ValuesToCount.get(f2Only), f2Only.isBlank() ? "[blank string]" : f2Only));
-            }
-        }
-
-        Set<String> intersection = new HashSet<>();
-        intersection.addAll(f1ValuesToCount.keySet());
-        intersection.addAll(f2ValuesToCount.keySet());
-
-        intersection.removeAll(f1MinusF2);
-        intersection.removeAll(f2MinusF1);
-
-        List<String> intersectionList = new ArrayList<>(intersection);
-        intersectionList.sort((h1, h2) -> {
-            int compareTo = h1.compareToIgnoreCase(h2);
-
-            if (compareTo == 0) {
-                compareTo = h1.compareTo(h2);
-            }
-
-            return compareTo;
-        });
-
-        if (!(f1MinusF2.size() == f1ValuesToCount.size() && f2MinusF1.size() == f2ValuesToCount.size())) {
-            System.out.println(String.format("\nIntersection comparison (%s):", intersectionList.size()));
-            String countsMatch = "";
-            String countsDoNotMatch = "";
-
-            for (String key : intersectionList) {
-                String keyLabel = key.isBlank() ? "[blank string]" : key;
-                if (!f1ValuesToCount.get(key).equals(f2ValuesToCount.get(key))) {
-                    countsDoNotMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
-                } else {
-                    countsMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
-                }
-            }
-
-            if (!countsDoNotMatch.isEmpty()) {
-                System.out.println("Non-matching:\n" + countsDoNotMatch);
-            }
-
-            if (!countsMatch.isEmpty()) {
-                System.out.println("Matching:\n" + countsMatch);
-            }
-        }
-    }
-
-    private void compareInventoryCounts(LinkedHashMap<String, Integer> f1ValuesToCount, LinkedHashMap<String, Integer> f2ValuesToCount,
-                                        Map<String, List<String>> f1ValueToPaths, Map<String, List<String>> f2ValueToPaths) {
-        List<String> f1MinusF2 = new ArrayList<>(f1ValuesToCount.keySet());
-        f1MinusF2.removeAll(f2ValuesToCount.keySet());
-
-        List<String> f2MinusF1 = new ArrayList<>(f2ValuesToCount.keySet());
-        f2MinusF1.removeAll(f1ValuesToCount.keySet());
-
-        if (!f1MinusF2.isEmpty()) {
-            System.out.println(String.format("\nFound only in -f1 (%s):", f1MinusF2.size()));
-
-            for (String f1Only : f1MinusF2) {
-                System.out.println(String.format("(%s) %s, Paths: [%s]", f1ValuesToCount.get(f1Only), f1Only.isBlank() ? "[blank string]" : f1Only,
-                        f1ValueToPaths.get(f1Only).stream().collect(Collectors.joining(","))));
-            }
-        }
-
-        if (!f2MinusF1.isEmpty()) {
-            System.out.println(String.format("\nFound only in -f2 (%s):", f2MinusF1.size()));
-
-            for (String f2Only : f2MinusF1) {
-                System.out.println(String.format("(%s) %s, Paths: [%s]", f2ValuesToCount.get(f2Only), f2Only.isBlank() ? "[blank string]" : f2Only,
-                        f2ValueToPaths.get(f2Only).stream().collect(Collectors.joining(","))));
-            }
-        }
-
-        Set<String> intersection = new HashSet<>();
-        intersection.addAll(f1ValuesToCount.keySet());
-        intersection.addAll(f2ValuesToCount.keySet());
-
-        intersection.removeAll(f1MinusF2);
-        intersection.removeAll(f2MinusF1);
-
-        List<String> intersectionList = new ArrayList<>(intersection);
-        intersectionList.sort((h1, h2) -> {
-            int compareTo = h1.compareToIgnoreCase(h2);
-
-            if (compareTo == 0) {
-                compareTo = h1.compareTo(h2);
-            }
-
-            return compareTo;
-        });
-
-        if (!(f1MinusF2.size() == f1ValuesToCount.size() && f2MinusF1.size() == f2ValuesToCount.size())) {
-            System.out.println(String.format("\nIntersection comparison (%s):", intersectionList.size()));
-            String countsMatch = "";
-            String countsDoNotMatch = "";
-
-            for (String key : intersectionList) {
-                String keyLabel = key.isBlank() ? "[blank string]" : key;
-                if (!f1ValuesToCount.get(key).equals(f2ValuesToCount.get(key))) {
-                    countsDoNotMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
-                } else {
-                    countsMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
-                }
-            }
-
-            if (!countsDoNotMatch.isEmpty()) {
-                System.out.println("Non-matching:\n" + countsDoNotMatch);
-            }
-
-            if (!countsMatch.isEmpty()) {
-                System.out.println("Matching:\n" + countsMatch);
-            }
-        }
+        System.out.println("\nTest complete.");
     }
 
     private LinkedHashMap<String, Integer> getValueToCountMap(Path metadataPath, String headerName, Map<String, List<String>> valueToPath) throws IOException {
@@ -260,14 +166,12 @@ public class LoadFileService implements Callable<Integer> {
             }
 
             StringTokenizer t = new StringTokenizer("", Character.toChars(20)[0], Character.toChars(254)[0]).setIgnoreEmptyTokens(false);
-
             List<String> header = Arrays.asList(t.reset(row).getTokenArray());
 
             if (Collections.frequency(header, headerName) != 1) {
             }
 
             int columnIndex = header.lastIndexOf(headerName);
-
             int pathIndex = -1;
 
             if (Collections.frequency(header,"PATH") == 1) {
@@ -283,13 +187,304 @@ public class LoadFileService implements Callable<Integer> {
 
                 if (!valueToPath.containsKey(values[columnIndex])) {
                     valueToPath.put(values[columnIndex], new ArrayList<>());
-                } else {
-                    valueToPath.get(values[columnIndex]).add(values[pathIndex]);
                 }
+
+               valueToPath.get(values[columnIndex]).add(values[pathIndex].isBlank() ? values[pathIndex] : values[pathIndex].substring(values[pathIndex].lastIndexOf("\\")));
             }
         }
 
         return valueToCount;
+    }
+
+    private void compareInventoryCounts(LinkedHashMap<String, Integer> f1ValuesToCount, LinkedHashMap<String, Integer> f2ValuesToCount) {
+        List<String> f1MinusF2 = new ArrayList<>(f1ValuesToCount.keySet());
+        f1MinusF2.removeAll(f2ValuesToCount.keySet());
+
+        List<String> f2MinusF1 = new ArrayList<>(f2ValuesToCount.keySet());
+        f2MinusF1.removeAll(f1ValuesToCount.keySet());
+
+        String countNotZero = "";
+        String countZero = "";
+
+        if (!f1MinusF2.isEmpty()) {
+            System.out.println(String.format("\nFound only in -f1 (%s):", f1MinusF2.size()));
+
+            for (String f1Only : f1MinusF2) {
+                if (f1ValuesToCount.get(f1Only) > 0) {
+                    countNotZero += String.format("(%s) %s\n", f1ValuesToCount.get(f1Only), f1Only.isBlank() ? "[blank string]" : f1Only);
+                } else {
+                    countZero += String.format("(%s) %s\n", f1ValuesToCount.get(f1Only), f1Only.isBlank() ? "[blank string]" : f1Only);
+                }
+            }
+
+            if (!countNotZero.isEmpty()) {
+                System.out.println(countNotZero);
+            }
+
+            if (!countZero.isEmpty()) {
+                System.out.println(countZero);
+            }
+        }
+
+        countNotZero = "";
+        countZero = "";
+
+        if (!f2MinusF1.isEmpty()) {
+            System.out.println(String.format("\nFound only in -f2 (%s):", f2MinusF1.size()));
+
+            for (String f2Only : f2MinusF1) {
+                if (f2ValuesToCount.get(f2Only) > 0) {
+                    countNotZero += String.format("(%s) %s\n", f2ValuesToCount.get(f2Only), f2Only.isBlank() ? "[blank string]" : f2Only);
+                } else {
+                    countZero += String.format("(%s) %s\n", f2ValuesToCount.get(f2Only), f2Only.isBlank() ? "[blank string]" : f2Only);
+                }
+            }
+
+            if (!countNotZero.isEmpty()) {
+                System.out.println(countNotZero);
+            }
+
+            if (!countZero.isEmpty()) {
+                System.out.println(countZero);
+            }
+        }
+
+        Set<String> intersection = new HashSet<>();
+        intersection.addAll(f1ValuesToCount.keySet());
+        intersection.addAll(f2ValuesToCount.keySet());
+
+        intersection.removeAll(f1MinusF2);
+        intersection.removeAll(f2MinusF1);
+
+        List<String> intersectionList = new ArrayList<>(intersection);
+        intersectionList.sort((h1, h2) -> {
+            int compareTo = h1.compareToIgnoreCase(h2);
+
+            if (compareTo == 0) {
+                compareTo = h1.compareTo(h2);
+            }
+
+            return compareTo;
+        });
+
+        if (!(f1MinusF2.size() == f1ValuesToCount.size() && f2MinusF1.size() == f2ValuesToCount.size())) {
+            System.out.println(String.format("\nIntersection comparison (%s):", intersectionList.size()));
+            String countsMatch = "";
+            String countsDoNotMatch = "";
+
+            for (String key : intersectionList) {
+                String keyLabel = key.isBlank() ? "[blank string]" : key;
+                if (!f1ValuesToCount.get(key).equals(f2ValuesToCount.get(key))) {
+                    countsDoNotMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
+                } else {
+                    countsMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
+                }
+            }
+
+            if (!countsDoNotMatch.isEmpty()) {
+                System.out.println("Non-matching:\n" + countsDoNotMatch);
+            }
+
+            if (!countsMatch.isEmpty()) {
+                System.out.println("Matching:\n" + countsMatch);
+            }
+        }
+    }
+
+    private boolean compareInventoryCounts(LinkedHashMap<String, Integer> f1ValuesToCount, LinkedHashMap<String, Integer> f2ValuesToCount,
+                                        Map<String, List<String>> f1ValueToPaths, Map<String, List<String>> f2ValueToPaths, boolean print) {
+        /*
+        no differences and intersection matches
+        no value found in one and not in the other and all values have the same number of occurances.
+         */
+        boolean matches = true;
+        List<String> f1MinusF2 = new ArrayList<>(f1ValuesToCount.keySet());
+        f1MinusF2.removeAll(f2ValuesToCount.keySet());
+
+        List<String> f2MinusF1 = new ArrayList<>(f2ValuesToCount.keySet());
+        f2MinusF1.removeAll(f1ValuesToCount.keySet());
+
+        if (!f1MinusF2.isEmpty()) {
+            matches = false;
+
+            if (print) {
+                System.out.println(String.format("\nFound only in -f1 (%s):", f1MinusF2.size()));
+
+                for (String f1Only : f1MinusF2) {
+                    System.out.println(String.format("(%s) %s, Paths: [%s]", f1ValuesToCount.get(f1Only), f1Only.isBlank() ? "[blank string]" : f1Only,
+                            f1ValueToPaths.get(f1Only).stream().collect(Collectors.joining(","))));
+                }
+            }
+        }
+
+        if (!f2MinusF1.isEmpty()) {
+            matches = false;
+
+            if (print) {
+                System.out.println(String.format("\nFound only in -f2 (%s):", f2MinusF1.size()));
+
+                for (String f2Only : f2MinusF1) {
+                    System.out.println(String.format("(%s) %s, Paths: [%s]", f2ValuesToCount.get(f2Only), f2Only.isBlank() ? "[blank string]" : f2Only,
+                            f2ValueToPaths.get(f2Only).stream().collect(Collectors.joining(","))));
+                }
+            }
+        }
+
+        Set<String> intersection = new HashSet<>();
+        intersection.addAll(f1ValuesToCount.keySet());
+        intersection.addAll(f2ValuesToCount.keySet());
+
+        intersection.removeAll(f1MinusF2);
+        intersection.removeAll(f2MinusF1);
+
+        List<String> intersectionList = new ArrayList<>(intersection);
+        intersectionList.sort((h1, h2) -> {
+            int compareTo = h1.compareToIgnoreCase(h2);
+
+            if (compareTo == 0) {
+                compareTo = h1.compareTo(h2);
+            }
+
+            return compareTo;
+        });
+
+        if (!(f1MinusF2.size() == f1ValuesToCount.size() && f2MinusF1.size() == f2ValuesToCount.size())) {
+            if (print) {
+                System.out.println(String.format("\nIntersection comparison (%s):", intersectionList.size()));
+            }
+
+            String countsMatch = "";
+            String countsDoNotMatch = "";
+            int matching = 0;
+            int nonMatching = 0;
+
+            for (String key : intersectionList) {
+                String keyLabel = key.isBlank() ? "[blank string]" : key;
+                if (!f1ValuesToCount.get(key).equals(f2ValuesToCount.get(key))) {
+                    nonMatching++;
+                    countsDoNotMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
+                } else {
+                    matching++;
+                    countsMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
+                }
+            }
+
+            if (print) {
+                if (matching > 0) {
+                    System.out.println("Matching: " + matching);
+                }
+
+//            if (!countsMatch.isEmpty()) {
+//                System.out.println("Matching:\n" + countsMatch);
+//            }
+
+                if (nonMatching > 0) {
+                    System.out.println("Non-matching: " + nonMatching);
+                }
+
+                if (!countsDoNotMatch.isEmpty()) {
+                    System.out.println("Non-matching:\n" + countsDoNotMatch);
+                }
+            }
+
+            matches = matches && nonMatching == 0;
+        }
+
+        return matches;
+    }
+
+    private void fullComparison() throws IOException {
+        Map<String, Integer> f1ValuesToCount = getHeaderToCountMap(file1);
+        Map<String, Integer> f2ValuesToCount = getHeaderToCountMap(file2);
+
+        List<String> f1MinusF2 = new ArrayList<>(f1ValuesToCount.keySet());
+        f1MinusF2.removeAll(f2ValuesToCount.keySet());
+
+        List<String> f2MinusF1 = new ArrayList<>(f2ValuesToCount.keySet());
+        f2MinusF1.removeAll(f1ValuesToCount.keySet());
+
+        String f1OnlyNotZero = "";
+
+        if (!f1MinusF2.isEmpty()) {
+            System.out.println(String.format("\nFound only in -f1 (%s):", f1MinusF2.size()));
+
+            for (String f1Only : f1MinusF2) {
+                if (f1ValuesToCount.get(f1Only) > 0) {
+                    f1OnlyNotZero += String.format("(%s) %s\n", f1ValuesToCount.get(f1Only), f1Only.isBlank() ? "[blank string]" : f1Only);
+                }
+            }
+
+            if (!f1OnlyNotZero.isEmpty()) {
+                System.out.println(f1OnlyNotZero);
+            }
+        }
+
+        String f2OnlyNotZero = "";
+
+        if (!f2MinusF1.isEmpty()) {
+            System.out.println(String.format("\nFound only in -f2 (%s):", f2MinusF1.size()));
+
+            for (String f2Only : f2MinusF1) {
+                if (f2ValuesToCount.get(f2Only) > 0) {
+                    f2OnlyNotZero += String.format("(%s) %s\n", f2ValuesToCount.get(f2Only), f2Only.isBlank() ? "[blank string]" : f2Only);
+                }
+            }
+
+            if (!f2OnlyNotZero.isEmpty()) {
+                System.out.println(f2OnlyNotZero);
+            }
+        }
+
+        Set<String> intersection = new HashSet<>();
+        intersection.addAll(f1ValuesToCount.keySet());
+        intersection.addAll(f2ValuesToCount.keySet());
+
+        intersection.removeAll(f1MinusF2);
+        intersection.removeAll(f2MinusF1);
+
+        List<String> intersectionList = new ArrayList<>(intersection);
+
+        intersectionList.sort((h1, h2) -> {
+            int compareTo = h1.compareToIgnoreCase(h2);
+
+            if (compareTo == 0) {
+                compareTo = h1.compareTo(h2);
+            }
+
+            return compareTo;
+        });
+
+        if (!(f1MinusF2.size() == f1ValuesToCount.size() && f2MinusF1.size() == f2ValuesToCount.size())) {
+            String countsDoNotMatch = "";
+            List<String> countsMatch = new ArrayList<>();
+
+            for (String key : intersectionList) {
+                if (!f1ValuesToCount.get(key).equals(f2ValuesToCount.get(key))) {
+                    countsDoNotMatch += String.format("%s: -f1 (%s), -f2 (%s)\n", key.isBlank() ? "[blank string]" : key, f1ValuesToCount.get(key), f2ValuesToCount.get(key));
+                } else {
+                    countsMatch.add(key);
+                }
+            }
+
+            if (!countsDoNotMatch.isEmpty()) {
+                System.out.println("Not matching:\n" + countsDoNotMatch);
+            }
+
+            System.out.println("Checking intersection for columns with same value occurrence counts:");
+
+            for (String key : countsMatch) {
+                Map<String, List<String>> f1ValueToPaths = new HashMap<>();
+                Map<String, List<String>> f2ValueToPaths = new HashMap<>();
+
+                boolean matches = compareInventoryCounts(getValueToCountMap(file1, key, f1ValueToPaths), getValueToCountMap(file2, key, f2ValueToPaths), f1ValueToPaths, f2ValueToPaths, false);
+
+                if (!matches) {
+                    System.out.println(String.format("%s exists in both load files, but the value occurrence counts do not match", key));
+                }
+            }
+        }
+
+        System.out.println("\nTest completed.");
     }
 
     private LinkedHashMap<String, Integer> getHeaderToCountMap(Path metadataPath) throws IOException {
@@ -421,24 +616,6 @@ public class LoadFileService implements Callable<Integer> {
         return s.matches("^[a-fA-F0-9]{40}$");
     }
 
-    private void countF1Rows() throws IOException {
-
-        try (BufferedReader br = Files.newBufferedReader(file1, StandardCharsets.UTF_8)) {
-            String row = br.readLine();
-
-            int rowCount = 0;
-            while ((row = br.readLine()) != null) {
-                rowCount++;
-
-                if (rowCount % 500 == 0) {
-                    System.out.print("\rRow: " + rowCount);
-                }
-            }
-
-            System.out.print("\rRows: " + rowCount + "                                                    ");
-        }
-    }
-
     private void compareDatFiles() throws IOException {
         boolean passed = true;
 
@@ -553,9 +730,7 @@ public class LoadFileService implements Callable<Integer> {
         }
     }
 
-    public void countRowsWithValue() throws IOException {
-        LinkedHashMap<String, Integer> headerToCount = new LinkedHashMap<>();
-
+    private void findHasValues(boolean valueExists) throws IOException {
         try (BufferedReader br = Files.newBufferedReader(file1, StandardCharsets.UTF_8)) {
             String row = br.readLine();
 
@@ -566,70 +741,43 @@ public class LoadFileService implements Callable<Integer> {
             StringTokenizer t = new StringTokenizer("", Character.toChars(20)[0], Character.toChars(254)[0]);
             t.setIgnoreEmptyTokens(false);
 
-            List<String> header = Arrays.asList(t.reset(row).getTokenArray());
-
-            /*
-            Collections.frequency(list, key));
-             */
-            int headerIndex = header.indexOf(headerName);
-            List<String> rows = new ArrayList<>();
+            String header = row;
+            List<String> headerItems = Arrays.asList(t.reset(header).getTokenArray());
+            int headerIndex = headerItems.indexOf(headerName);
+            List<String> results = new ArrayList<>();
             int count = 0;
+            int idIndex = -1;
+
+            if (Collections.frequency(headerItems,"BATES") == 1) {
+                idIndex = headerItems.lastIndexOf("BATES");
+            } else if (Collections.frequency(headerItems,"ID") == 1) {
+                idIndex = headerItems.lastIndexOf("ID");
+            }
 
             while ((row = br.readLine()) != null) {
                 count++;
 
                 String[] values = t.reset(row).getTokenArray();
 
-                if (header.size() != values.length) {
-                    // throw an exception
-                    System.out.println(String.format("Row #%s column count does not match header: %s row columns, %s header columns", count, values.length, header.size()));
-                } else {
-                    if (!values[headerIndex].isBlank()) {
-                        rows.add(row);
+                if (valueExists && !values[headerIndex].isBlank()) {
+                    if (substring.isEmpty() || (!substring.isEmpty() && values[headerIndex].contains(substring))) {
+                        results.add(print ? row + "\n" : values[idIndex]);
                     }
+                } else if (!valueExists && values[headerIndex].isBlank()) {
+                    results.add(print ? row + "\n" : values[idIndex]);
                 }
             }
 
-            if (!rows.isEmpty()) {
-                System.out.println(String.format("%s rows found with values for header %s", rows.size(), headerName));
-//                System.out.println(rows.stream().collect(Collectors.joining("\n\n")));
-            }
-        }
-    }
+            System.out.println(String.format("%s rows found.", count));
 
-    public void countRowsWithoutValue() throws IOException {
-        LinkedHashMap<String, Integer> headerToCount = new LinkedHashMap<>();
+            if (!results.isEmpty()) {
+                System.out.println(String.format("%s rows found %s values for header %s", results.size(), valueExists ? "with" : "without", headerName));
 
-        try (BufferedReader br = Files.newBufferedReader(file1, StandardCharsets.UTF_8)) {
-            String row = br.readLine();
-
-            if (row.charAt(0) == UTF_8_BOM) {
-                row = row.substring(1);
-            }
-
-            StringTokenizer t = new StringTokenizer("", Character.toChars(20)[0], Character.toChars(254)[0]);
-            t.setIgnoreEmptyTokens(false);
-
-            List<String> header = Arrays.asList(t.reset(row).getTokenArray());
-            int headerIndex = header.indexOf(headerName);
-            List<String> rows = new ArrayList<>();
-            int count = 0;
-
-            while ((row = br.readLine()) != null) {
-                count++;
-
-                String[] values = t.reset(row).getTokenArray();
-
-                if (values[headerIndex].isBlank()) {
-                    rows.add(row);
+                if (print) {
+                    System.out.println(header);
                 }
-            }
 
-            System.out.println(String.format("%s rows found. %s have no value.", count, rows.size()));
-
-            if (!rows.isEmpty()) {
-                System.out.println(String.format("%s rows found without values for header %s", rows.size(), headerName));
-                System.out.println(rows.stream().collect(Collectors.joining("\n\n")));
+                System.out.println(results.stream().collect(Collectors.joining()));
             }
         }
     }
@@ -714,5 +862,38 @@ public class LoadFileService implements Callable<Integer> {
         f2HasValueMinusf1HasValue.removeAll(f1HasValue);
 
         System.out.println(String.format("Has value in -f2 and not in -f1 (%s):\n%s", f2HasValueMinusf1HasValue.size(), f2HasValueMinusf1HasValue.stream().collect(Collectors.joining("\n"))));
+    }
+
+    private void printRow() throws IOException {
+        try (BufferedReader br = Files.newBufferedReader(file1, StandardCharsets.UTF_8)) {
+            String row = br.readLine();
+
+            if (row.charAt(0) == UTF_8_BOM) {
+                row = row.substring(1);
+            }
+
+            StringTokenizer t = new StringTokenizer("", Character.toChars(20)[0], Character.toChars(254)[0]);
+            t.setIgnoreEmptyTokens(false);
+
+            String header = row;
+            List<String> headerItems = Arrays.asList(t.reset(header).getTokenArray());
+            int headerIndex = headerItems.indexOf(headerName);
+            List<String> rows = new ArrayList<>();
+
+            while ((row = br.readLine()) != null) {
+                String[] values = t.reset(row).getTokenArray();
+
+                if (values[headerIndex].equals(value)) {
+                    rows.add(row);
+                }
+            }
+
+            System.out.println(String.format("%s rows found.", rows.size()));
+            System.out.println(String.format("Header:\n%s", header));
+
+            if (!rows.isEmpty()) {
+                System.out.println(rows.stream().collect(Collectors.joining("\n\n")));
+            }
+        }
     }
 }

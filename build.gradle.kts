@@ -4,7 +4,7 @@ version = "0.1.0"
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(11))
+        languageVersion.set(JavaLanguageVersion.of(17))
     }
 }
 
@@ -40,6 +40,6 @@ tasks.jar {
     exclude("META-INF/NOTICE")
     exclude("META-INF/NOTICE.txt")
 
-    // This is used to make the jar fat.  log all the entries in the map below.
+    // This is used to make the jar fat.
     from(configurations.runtimeClasspath.get().map({ if (it.isDirectory) it else zipTree(it) }))
 }
