@@ -1,6 +1,7 @@
 package com.rationalenterprise.mediadiff;
 
 import com.rationalenterprise.mediadiff.service.DirectoryService;
+import com.rationalenterprise.mediadiff.service.JsonService;
 import com.rationalenterprise.mediadiff.service.LoadFileService;
 import picocli.CommandLine;
 import picocli.CommandLine.Spec;
@@ -13,7 +14,8 @@ import java.util.concurrent.Callable;
         mixinStandardHelpOptions = true,
         subcommands = {
             DirectoryService.class,
-            LoadFileService.class
+            LoadFileService.class,
+            JsonService.class
         })
 class MediaDiffApplication implements Callable<Integer> {
     @Spec

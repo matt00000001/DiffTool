@@ -20,6 +20,7 @@ dependencies {
     implementation("commons-codec:commons-codec:1.15")
     implementation("info.picocli:picocli:4.6.2")
     implementation("org.apache.commons:commons-text:1.9")
+    implementation("com.google.code.gson:gson:2.9.0")
 }
 
 application {
@@ -39,6 +40,7 @@ tasks.jar {
     exclude("NOTICE.txt")
     exclude("META-INF/NOTICE")
     exclude("META-INF/NOTICE.txt")
+    exclude("**/module-info.class")
 
     // This is used to make the jar fat.
     from(configurations.runtimeClasspath.get().map({ if (it.isDirectory) it else zipTree(it) }))

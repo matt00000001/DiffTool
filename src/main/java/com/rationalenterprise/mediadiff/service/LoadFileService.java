@@ -19,13 +19,13 @@ public class LoadFileService implements Callable<Integer> {
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
 
-    @CommandLine.Option(names = {"-f1"}, description = "The path to a load file.")
+    @CommandLine.Option(names = {"--file1"}, description = "The path to a load file.")
     private Path file1;
 
-    @CommandLine.Option(names = {"-f2"}, description = "The path to a load file.")
+    @CommandLine.Option(names = {"--file2"}, description = "The path to a load file.")
     private Path file2;
 
-    @CommandLine.Option(names = "-cr", description = "Count rows.")
+    @CommandLine.Option(names = "--count-rows", description = "Count rows.")
     private boolean countRows;
 
     @CommandLine.Option(names = "-ch", description = "Compare hashes.")
@@ -34,11 +34,11 @@ public class LoadFileService implements Callable<Integer> {
     @CommandLine.Option(names = "-datToJson", description = "Compare a dat and json.")
     private boolean datToJson;
 
-    @CommandLine.Option(names = "-i", description = "Display value counts for all headers.  Compare the headers found in both load files.")
+    @CommandLine.Option(names = "--inventory", description = "Inventory headers found in both load files.")
     private boolean countHasValues;
 
-    @CommandLine.Option(names = "-ic", description = "Compare value counts load files for header -h.")
-    private boolean countValueOccurences;
+    @CommandLine.Option(names = "--inventory-column", description = "Inventory value counts for header -h.")
+    private boolean inventoryColumn;
 
     @CommandLine.Option(names = "--full-comparison", description = "Compare the load files down to the value occurrences.")
     private boolean fullComparison;
@@ -79,7 +79,7 @@ public class LoadFileService implements Callable<Integer> {
             throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: -f1 does not exist", file1.toString()));
         }
 
-        if (!(countHasValues || countValueOccurences || findHasValues) && !file2.toFile().exists()) {
+        if (!(countHasValues || inventoryColumn || findHasValues) && !file2.toFile().exists()) {
             throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: -f2 does not exist", file2.toString()));
         }
 
@@ -99,7 +99,7 @@ public class LoadFileService implements Callable<Integer> {
             countRows();
         } else if (countHasValues) {
             countHasValues();
-        } else if (countValueOccurences) {
+        } else if (inventoryColumn) {
             countValueOccurrences();
         } else if (fullComparison) {
             fullComparison();
@@ -892,7 +892,7 @@ public class LoadFileService implements Callable<Integer> {
             System.out.println(String.format("Header:\n%s", header));
 
             if (!rows.isEmpty()) {
-                System.out.println(rows.stream().collect(Collectors.joining("\n\n")));
+                System.out.println(rows.stream().collect(Collectors.joining("\n")));
             }
         }
     }
