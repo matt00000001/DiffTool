@@ -22,19 +22,19 @@ public class DirectoryService implements Callable<Integer> {
     @Spec
     CommandSpec spec;
 
-    @Option(names = {"--directory1", "-d1"}, description = "The path to a directory.")
+    @Option(names = {"--directory1"}, description = "The path to a directory.")
     private Path directory1;
 
-    @Option(names = {"--directory2", "-d2"}, description = "The path to a directory.")
+    @Option(names = {"--directory2"}, description = "The path to a directory.")
     private Path directory2;
 
-    @Option(names = {"--inventory", "-i"}, description = "Counts files.")
+    @Option(names = {"--inventory"}, description = "Counts files.")
     boolean inventory;
 
-    @Option(names = {"--nativesWithoutText", "-n"}, description = "Finds natives without extracted text.")
+    @Option(names = {"--natives-without-text"}, description = "Finds natives without extracted text.")
     boolean nativesWithoutText;
 
-    @Option(names = {"--MD5", "-m"}, description = "Check MD5s only.")
+    @Option(names = {"--MD5"}, description = "Check MD5s only.")
     boolean checkMD5Only;
 
     /**

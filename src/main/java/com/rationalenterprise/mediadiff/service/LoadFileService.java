@@ -1,5 +1,6 @@
 package com.rationalenterprise.mediadiff.service;
 
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.text.StringTokenizer;
 import picocli.CommandLine;
 
@@ -19,20 +20,20 @@ public class LoadFileService implements Callable<Integer> {
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
 
-    @CommandLine.Option(names = {"--file1"}, description = "The path to a load file.")
-    private Path file1;
+    @CommandLine.Option(names = {"--dat-path-1"}, description = "The path to a load file.")
+    private Path datPath1;
 
-    @CommandLine.Option(names = {"--file2"}, description = "The path to a load file.")
-    private Path file2;
+    @CommandLine.Option(names = {"--dat-path-2"}, description = "The path to a load file.")
+    private Path datPath2;
 
     @CommandLine.Option(names = "--count-rows", description = "Count rows.")
     private boolean countRows;
 
-    @CommandLine.Option(names = "-ch", description = "Compare hashes.")
+    @CommandLine.Option(names = "--compare-hashes", description = "Compare hashes.")
     private boolean compareHashes;
 
-    @CommandLine.Option(names = "-datToJson", description = "Compare a dat and json.")
-    private boolean datToJson;
+    @CommandLine.Option(names = "--dat-hash-comparison", description = "Compare hashes of the dat files.")
+    private boolean compareDatHashes;
 
     @CommandLine.Option(names = "--inventory", description = "Inventory headers found in both load files.")
     private boolean countHasValues;
@@ -75,24 +76,24 @@ public class LoadFileService implements Callable<Integer> {
      */
     @Override
     public Integer call() throws IOException {
-        if (!file1.toFile().exists()) {
-            throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: -f1 does not exist", file1.toString()));
+        if (!datPath1.toFile().exists()) {
+            throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: --dat-path-1 does not exist", datPath1.toString()));
         }
 
-        if (!(countHasValues || inventoryColumn || findHasValues) && !file2.toFile().exists()) {
-            throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: -f2 does not exist", file2.toString()));
+        if (!(countHasValues || inventoryColumn || findHasValues) && !datPath2.toFile().exists()) {
+            throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: --dat-path-2 does not exist", datPath2.toString()));
         }
 
         if (findHasValues && (headerName == null ||  headerName.isBlank())) {
-            throw new CommandLine.ParameterException(spec.commandLine(), String.format("-h must be a header name", file2.toString()));
+            throw new CommandLine.ParameterException(spec.commandLine(), String.format("-h must be a header name", datPath2.toString()));
         }
 
         if (findNotHasValues && (headerName == null ||  headerName.isBlank())) {
-            throw new CommandLine.ParameterException(spec.commandLine(), String.format("-h must be a header name", file2.toString()));
+            throw new CommandLine.ParameterException(spec.commandLine(), String.format("-h must be a header name", datPath2.toString()));
         }
 
         if (compareHasValueByHashes && (headerName == null ||  headerName.isBlank())) {
-            throw new CommandLine.ParameterException(spec.commandLine(), String.format("-h must be a header name", file2.toString()));
+            throw new CommandLine.ParameterException(spec.commandLine(), String.format("-h must be a header name", datPath2.toString()));
         }
 
         if (countRows) {
@@ -113,6 +114,8 @@ public class LoadFileService implements Callable<Integer> {
             findHasValues(false);
         } else if (printRow) {
             printRow();
+        } else if (compareDatHashes) {
+            compareDatHashes();
         } else {
             compareDatFiles();
         }
@@ -120,8 +123,24 @@ public class LoadFileService implements Callable<Integer> {
         return 0;
     }
 
+    private void compareDatHashes() throws IOException {
+        String dat1MD5 = "";
+
+        try (InputStream fileInputStream = new FileInputStream(datPath1.toFile())) {
+            dat1MD5 = DigestUtils.md5Hex(fileInputStream);
+        }
+
+        String dat2MD5 = "";
+
+        try (InputStream fileInputStream = new FileInputStream(datPath2.toFile())) {
+            dat2MD5 = DigestUtils.md5Hex(fileInputStream);
+        }
+
+        System.out.println(String.format("MD5s are %s: dat1 %s, dat2 %s", dat1MD5.equals(dat2MD5) ? "equal" : "not equal", dat1MD5, dat2MD5));
+    }
+
     private void countRows() throws IOException {
-        try (BufferedReader br = Files.newBufferedReader(file1, StandardCharsets.UTF_8)) {
+        try (BufferedReader br = Files.newBufferedReader(datPath1, StandardCharsets.UTF_8)) {
             String row;
             int rowCount = 0;
 
@@ -140,7 +159,7 @@ public class LoadFileService implements Callable<Integer> {
     - find missing rows (include (has values) info)
      */
     private void countHasValues() throws IOException {
-        compareInventoryCounts(getHeaderToCountMap(file1), getHeaderToCountMap(file2));
+        compareInventoryCounts(getHeaderToCountMap(datPath1), getHeaderToCountMap(datPath2));
 
         System.out.println("Test complete.");
     }
@@ -150,7 +169,7 @@ public class LoadFileService implements Callable<Integer> {
 
         Map<String, List<String>> f1ValueToPaths = new HashMap<>();
         Map<String, List<String>> f2ValueToPaths = new HashMap<>();
-        compareInventoryCounts(getValueToCountMap(file1, headerName, f1ValueToPaths), getValueToCountMap(file2, headerName, f2ValueToPaths), f1ValueToPaths, f2ValueToPaths, true);
+        compareInventoryCounts(getValueToCountMap(datPath1, headerName, f1ValueToPaths), getValueToCountMap(datPath2, headerName, f2ValueToPaths), f1ValueToPaths, f2ValueToPaths, true);
 
         System.out.println("\nTest complete.");
     }
@@ -394,8 +413,8 @@ public class LoadFileService implements Callable<Integer> {
     }
 
     private void fullComparison() throws IOException {
-        Map<String, Integer> f1ValuesToCount = getHeaderToCountMap(file1);
-        Map<String, Integer> f2ValuesToCount = getHeaderToCountMap(file2);
+        Map<String, Integer> f1ValuesToCount = getHeaderToCountMap(datPath1);
+        Map<String, Integer> f2ValuesToCount = getHeaderToCountMap(datPath2);
 
         List<String> f1MinusF2 = new ArrayList<>(f1ValuesToCount.keySet());
         f1MinusF2.removeAll(f2ValuesToCount.keySet());
@@ -476,7 +495,7 @@ public class LoadFileService implements Callable<Integer> {
                 Map<String, List<String>> f1ValueToPaths = new HashMap<>();
                 Map<String, List<String>> f2ValueToPaths = new HashMap<>();
 
-                boolean matches = compareInventoryCounts(getValueToCountMap(file1, key, f1ValueToPaths), getValueToCountMap(file2, key, f2ValueToPaths), f1ValueToPaths, f2ValueToPaths, false);
+                boolean matches = compareInventoryCounts(getValueToCountMap(datPath1, key, f1ValueToPaths), getValueToCountMap(datPath2, key, f2ValueToPaths), f1ValueToPaths, f2ValueToPaths, false);
 
                 if (!matches) {
                     System.out.println(String.format("%s exists in both load files, but the value occurrence counts do not match", key));
@@ -536,8 +555,8 @@ public class LoadFileService implements Callable<Integer> {
     }
 
     private void compareMD5SUMs() throws IOException {
-        List<String> hashes1 = getHashes(file1);
-        List<String> hashes2 = getHashes(file2);
+        List<String> hashes1 = getHashes(datPath1);
+        List<String> hashes2 = getHashes(datPath2);
 
         if (hashes1.size() != hashes2.size()) {
             System.out.println(String.format("%s hashes found in -f1 and %s hashes found in -f2", hashes1.size(), hashes2.size()));
@@ -583,7 +602,7 @@ public class LoadFileService implements Callable<Integer> {
             }
 
             if (!MD5Found) {
-                throw new CommandLine.ParameterException(spec.commandLine(), String.format("MD5SUM not found in %s", file1));
+                throw new CommandLine.ParameterException(spec.commandLine(), String.format("MD5SUM not found in %s", datPath1));
             }
 
             List<String> hashes = new ArrayList<>();
@@ -652,7 +671,7 @@ public class LoadFileService implements Callable<Integer> {
 
         List<String> header1;
 
-        try (BufferedReader br = Files.newBufferedReader(file1, StandardCharsets.UTF_8)) {
+        try (BufferedReader br = Files.newBufferedReader(datPath1, StandardCharsets.UTF_8)) {
             StringTokenizer t = new StringTokenizer("", Character.toChars(20)[0], Character.toChars(254)[0]);
             t.setIgnoreEmptyTokens(false);
 
@@ -679,7 +698,7 @@ public class LoadFileService implements Callable<Integer> {
             }
         }
         List<String> header2;
-        try (BufferedReader br = new BufferedReader(new FileReader(file2.toFile(), StandardCharsets.UTF_8))) {
+        try (BufferedReader br = new BufferedReader(new FileReader(datPath2.toFile(), StandardCharsets.UTF_8))) {
             StringTokenizer t = new StringTokenizer("", Character.toChars(20)[0], Character.toChars(254)[0]);
             t.setIgnoreEmptyTokens(false);
 
@@ -731,7 +750,7 @@ public class LoadFileService implements Callable<Integer> {
     }
 
     private void findHasValues(boolean valueExists) throws IOException {
-        try (BufferedReader br = Files.newBufferedReader(file1, StandardCharsets.UTF_8)) {
+        try (BufferedReader br = Files.newBufferedReader(datPath1, StandardCharsets.UTF_8)) {
             String row = br.readLine();
 
             if (row.charAt(0) == UTF_8_BOM) {
@@ -786,7 +805,7 @@ public class LoadFileService implements Callable<Integer> {
         Set<String> f1HasValue = new HashSet<>();
         Set<String> f1HasNoValue = new HashSet<>();
 
-        try (BufferedReader br = Files.newBufferedReader(file1, StandardCharsets.UTF_8)) {
+        try (BufferedReader br = Files.newBufferedReader(datPath1, StandardCharsets.UTF_8)) {
             String row = br.readLine();
 
             if (row.charAt(0) == UTF_8_BOM) {
@@ -821,7 +840,7 @@ public class LoadFileService implements Callable<Integer> {
         Set<String> f2HasValue = new HashSet<>();
         Set<String> f2HasNoValue = new HashSet<>();
 
-        try (BufferedReader br = Files.newBufferedReader(file2, StandardCharsets.UTF_8)) {
+        try (BufferedReader br = Files.newBufferedReader(datPath2, StandardCharsets.UTF_8)) {
             String row = br.readLine();
 
             if (row.charAt(0) == UTF_8_BOM) {
@@ -865,7 +884,7 @@ public class LoadFileService implements Callable<Integer> {
     }
 
     private void printRow() throws IOException {
-        try (BufferedReader br = Files.newBufferedReader(file1, StandardCharsets.UTF_8)) {
+        try (BufferedReader br = Files.newBufferedReader(datPath1, StandardCharsets.UTF_8)) {
             String row = br.readLine();
 
             if (row.charAt(0) == UTF_8_BOM) {

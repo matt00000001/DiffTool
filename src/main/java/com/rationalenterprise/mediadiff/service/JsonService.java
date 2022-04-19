@@ -40,11 +40,11 @@ public class JsonService implements Callable<Integer> {
     @Override
     public Integer call() throws IOException {
         if (!JSONFile.toFile().exists()) {
-            throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: -f1 does not exist", JSONFile.toString()));
+            throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: --json-path does not exist", JSONFile.toString()));
         }
 
         if (!(false) && !datPath.toFile().exists()) {
-            throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: -f2 does not exist", datPath.toString()));
+            throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: --dat-path does not exist", datPath.toString()));
         }
 
         if (countObjects) {
