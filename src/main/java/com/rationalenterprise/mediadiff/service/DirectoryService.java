@@ -22,11 +22,11 @@ public class DirectoryService implements Callable<Integer> {
     @Spec
     CommandSpec spec;
 
-    @Option(names = {"--directory1"}, description = "The path to a directory.")
-    private Path directory1;
+    @Option(names = {"--path-1"}, description = "The path to a directory.")
+    private Path path1;
 
-    @Option(names = {"--directory2"}, description = "The path to a directory.")
-    private Path directory2;
+    @Option(names = {"--path-2"}, description = "The path to a directory.")
+    private Path path2;
 
     @Option(names = {"--inventory"}, description = "Counts files.")
     boolean inventory;
@@ -34,8 +34,15 @@ public class DirectoryService implements Callable<Integer> {
     @Option(names = {"--natives-without-text"}, description = "Finds natives without extracted text.")
     boolean nativesWithoutText;
 
-    @Option(names = {"--MD5"}, description = "Check MD5s only.")
+    @Option(names = {"--MD5"}, description = "Check MD5s occurrences only.  When the files do not have matching names across directories," +
+            " names cannot be used and looking at the MD5s is the best attempt we can make to see if the directories contain the same files.")
     boolean checkMD5Only;
+
+    @Option(names = {"--full-comparison"}, description = "Check if directories are equivalent by checking: subdirectory, file name, and MD5, for all files in both directories.")
+    boolean fullComparison;
+
+    @Option(names = {"--verbose"}, description = "Verbose output option.")
+    boolean verbose;
 
     /**
      * Diff directories.
@@ -45,20 +52,20 @@ public class DirectoryService implements Callable<Integer> {
      */
     @Override
     public Integer call() throws IOException {
-        if (!directory1.toFile().exists()) {
-            throw new ParameterException(spec.commandLine(), String.format("Invalid option: -d1 does not exist", directory1.toString()));
+        if (!path1.toFile().exists()) {
+            throw new ParameterException(spec.commandLine(), String.format("Invalid option: --path-1 does not exist", path1.toString()));
         }
 
-        if (!directory1.toFile().isDirectory()) {
-            throw new ParameterException(spec.commandLine(), String.format("Invalid option: -d1 must be a directory", directory1.toString()));
+        if (!path1.toFile().isDirectory()) {
+            throw new ParameterException(spec.commandLine(), String.format("Invalid option: --path-1 must be a directory", path1.toString()));
         }
 
-        if (!directory2.toFile().exists()) {
-            throw new ParameterException(spec.commandLine(), String.format("Invalid option: -d2 does not exist", directory2.toString()));
+        if (!path2.toFile().exists()) {
+            throw new ParameterException(spec.commandLine(), String.format("Invalid option: --path-2 does not exist", path2.toString()));
         }
 
-        if (!directory2.toFile().isDirectory()) {
-            throw new ParameterException(spec.commandLine(), String.format("Invalid option: -d2 must be a directory", directory2.toString()));
+        if (!path2.toFile().isDirectory()) {
+            throw new ParameterException(spec.commandLine(), String.format("Invalid option: --path-2 must be a directory", path2.toString()));
         }
 
         if (inventory) {
@@ -67,15 +74,15 @@ public class DirectoryService implements Callable<Integer> {
             checkMD5Only();
         } else if (nativesWithoutText) {
             findNativesWithoutText();
-        } else {
-            checkAll();
+        } else if (fullComparison) {
+            fullComparison();
         }
 
         return 0;
     }
 
     private void findNativesWithoutText() {
-        List<String> names = getSortedParentDepthNames(directory1);
+        List<String> names = getSortedParentDepthNames(path1);
         List<String> nativesWithoutText = new ArrayList<>();
 
         for (String name : names) {
@@ -99,15 +106,15 @@ public class DirectoryService implements Callable<Integer> {
     }
 
     private void inventory() {
-        LinkedHashMap<String, Integer> d1ExtensionCounts = getExtensionCounts(directory1);
-        LinkedHashMap<String, Integer> d2ExtensionCounts = getExtensionCounts(directory2);
+        LinkedHashMap<String, Integer> d1ExtensionCounts = getExtensionCounts(path1);
+        LinkedHashMap<String, Integer> d2ExtensionCounts = getExtensionCounts(path2);
 
-        System.out.println("-d1:");
+        System.out.println("-path-1:");
         for (Map.Entry<String, Integer> entry : d1ExtensionCounts.entrySet()) {
             System.out.println(String.format("Extension %s: %s", entry.getKey(), entry.getValue()));
         }
 
-        System.out.println("\n-d2:");
+        System.out.println("\n-path-2:");
 
         for (Map.Entry<String, Integer> entry : d2ExtensionCounts.entrySet()) {
             System.out.println(String.format("Extension %s: %s", entry.getKey(), entry.getValue()));
@@ -122,11 +129,11 @@ public class DirectoryService implements Callable<Integer> {
         boolean different = !d1Only.isEmpty() || !d2Only.isEmpty();
 
         for (String entry : d1Only) {
-            System.out.println("Exists in -d1 only: " + entry);
+            System.out.println("Exists in --path-1 only: " + entry);
         }
 
         for (String entry : d2Only) {
-            System.out.println("Exists in -d1 only: " + entry);
+            System.out.println("Exists in --path-2 only: " + entry);
         }
 
         System.out.println();
@@ -138,7 +145,7 @@ public class DirectoryService implements Callable<Integer> {
 
                 if (entry.getValue() != d2Count) {
                     different = true;
-                    System.out.println(String.format("-d1 contins %s %s and -d2 contains %s %s", entry.getValue(), entry.getKey(), d2Count, entry.getKey()));
+                    System.out.println(String.format("--path-1 contains %s %s and --path-2 contains %s %s", entry.getValue(), entry.getKey(), d2Count, entry.getKey()));
                 }
             }
         }
@@ -204,31 +211,31 @@ public class DirectoryService implements Callable<Integer> {
      * file size, and native file
      */
     private void checkMD5Only() throws IOException {
-        List<String> d1Paths = getSortedParentDepthNames(directory1);
-        List<String> d2Paths = getSortedParentDepthNames(directory2);
+        List<String> d1Paths = getSortedParentDepthNames(path1);
+        List<String> d2Paths = getSortedParentDepthNames(path2);
 
-        System.out.println("-d1 paths found: " + d1Paths.size());
-        System.out.println("-d2 paths found: " + d2Paths.size());
+        System.out.println("--path-1 paths found: " + d1Paths.size());
+        System.out.println("--path-2 paths found: " + d2Paths.size());
 
         Map<String, String> d1NativeNameToPath = new HashMap<>();
         LinkedHashMap<String, List<String>> d1HashToPaths = new LinkedHashMap<>();
 
-        populateHashComparisonMaps(directory1, d1Paths, d1HashToPaths, d1NativeNameToPath);
+        populateHashComparisonMaps(path1, d1Paths, d1HashToPaths, d1NativeNameToPath);
 
         Map<String, String> d2NativeNameToPath = new HashMap<>();
         LinkedHashMap<String, List<String>> d2HashToPaths = new LinkedHashMap<>();
 
-        populateHashComparisonMaps(directory2, d2Paths, d2HashToPaths, d2NativeNameToPath);
+        populateHashComparisonMaps(path2, d2Paths, d2HashToPaths, d2NativeNameToPath);
 
         List<String> d1Only = new ArrayList<>(d1HashToPaths.keySet());
         d1Only.removeAll(d2HashToPaths.keySet());
 
-        boolean passed = logMissingHashes(directory1, d1NativeNameToPath, d1HashToPaths, d1Only);
+        boolean passed = logMissingHashes(path1, d1NativeNameToPath, d1HashToPaths, d1Only);
 
         List<String> d2Only = new ArrayList<>(d2HashToPaths.keySet());
         d2Only.removeAll(d1HashToPaths.keySet());
 
-        passed = logMissingHashes(directory2, d2NativeNameToPath, d2HashToPaths, d2Only);
+        passed = logMissingHashes(path2, d2NativeNameToPath, d2HashToPaths, d2Only);
 
         String nonMatchingDuplicateCounts = "";
 
@@ -242,7 +249,7 @@ public class DirectoryService implements Callable<Integer> {
 
                     for (String path : entry.getValue()) {
                         if (path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
-                            long extractedTextSize = new File(directory1 + File.separator + path).length();
+                            long extractedTextSize = new File(path1 + File.separator + path).length();
                             int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
                             String nativePath = d1NativeNameToPath.get(extensionIndex == -1 ? path : path.substring(0, extensionIndex));
 
@@ -254,7 +261,7 @@ public class DirectoryService implements Callable<Integer> {
 
                     for (String path : paths) {
                         if (path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
-                            long extractedTextSize = new File(directory2 + File.separator + path).length();
+                            long extractedTextSize = new File(path2 + File.separator + path).length();
                             int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
                             String nativePath = d2NativeNameToPath.get(extensionIndex == -1 ? path : path.substring(0, extensionIndex));
 
@@ -264,7 +271,7 @@ public class DirectoryService implements Callable<Integer> {
                         }
                     }
 
-                    nonMatchingDuplicateCounts += String.format("\n%s (MD5) has %s occurrences in -d1 and %s occurrences in -d2:\n%s",
+                    nonMatchingDuplicateCounts += String.format("\n%s (MD5) has %s occurrences in --path-1 and %s occurrences in --path-2:\n%s",
                             entry.getKey(), entry.getValue().size(), paths.size(), files);
                 }
             }
@@ -289,7 +296,7 @@ public class DirectoryService implements Callable<Integer> {
         if (!exclusiveHashes.isEmpty()) {
             passed = false;
 
-            System.out.println(String.format("\nExists in -d1 only %s: ", exclusiveHashes.size()));
+            System.out.println(String.format("\nExists in %s only (%s): ", root.getFileName(), exclusiveHashes.size()));
 
             for (String hash : exclusiveHashes) {
                 String paths = hashToPaths.get(hash).stream().map(path -> {
@@ -300,7 +307,7 @@ public class DirectoryService implements Callable<Integer> {
 
                         return String.format("[%s, %s bytes, Native file: %s]\n", path, extractedTextSize, nativePath);
                     } else {
-                        return path + "/n";
+                        return path + "\n";
                     }
                 }).collect(Collectors.joining());
 
@@ -384,12 +391,12 @@ public class DirectoryService implements Callable<Integer> {
      * Check the contents to one subdirectory deep.  The subdirectory and file name and hash of the file are required to match to pass.
      * Missing files and files that don't pass will be logged.
      */
-    private void checkAll() {
-        List<String> d1Names = getSortedParentDepthNames(directory1);
-        List<String> d2Names = getSortedParentDepthNames(directory2);
+    private void fullComparison() {
+        List<String> d1Names = getSortedParentDepthNames(path1);
+        List<String> d2Names = getSortedParentDepthNames(path2);
 
-        System.out.println("-d1 file count: " + d1Names.size());
-        System.out.println("-d2 file count: " + d2Names.size());
+        System.out.println("--path-1 file count: " + d1Names.size());
+        System.out.println("--path-2 file count: " + d2Names.size());
 
         List<String> d1AndD2Intersection = d1Names.stream().filter(d2Names::contains).collect(Collectors.toList());
 
@@ -401,12 +408,11 @@ public class DirectoryService implements Callable<Integer> {
         if (!d1Only.isEmpty()) {
             passed = false;
 
-            System.out.println(String.format("\nExists in -d1 only %s: ", d1Only.size()));
+            System.out.println(String.format("\nExists in --path-1 only (%s): ", d1Only.size()));
 
-            // this blew up the console
-//            for (String d1Only : d1Only) {
-//                System.out.println(d1Only);
-//            }
+            if (verbose) {
+                System.out.println(d1Only.stream().collect(Collectors.joining(", ")));
+            }
         }
 
         List<String> d2Only = new ArrayList<>(d2Names);
@@ -415,19 +421,18 @@ public class DirectoryService implements Callable<Integer> {
         if (!d2Only.isEmpty()) {
             passed = false;
 
-            System.out.println(String.format("\nExists in -d2 only %s: ", d2Only.size()));
+            System.out.println(String.format("\nExists in --path-2 only (%s): ", d2Only.size()));
 
-            // this blew up the console
-//            for (String d2Only : d2Only) {
-//                System.out.println(d2Only);
-//            }
+            if (verbose) {
+                System.out.println(d2Only.stream().collect(Collectors.joining(", ")));
+            }
         }
 
         List<String> nonMatching = new ArrayList<>();
 
         for (String name : d1AndD2Intersection) {
-            try (InputStream file1 = new FileInputStream(directory1 + File.separator + name);
-                 InputStream file2 = new FileInputStream(directory2 + File.separator + name)) {
+            try (InputStream file1 = new FileInputStream(path1 + File.separator + name);
+                 InputStream file2 = new FileInputStream(path2 + File.separator + name)) {
 
                 String hash1 = DigestUtils.md5Hex(file1);
                 String hash2 = DigestUtils.md5Hex(file2);
@@ -445,10 +450,9 @@ public class DirectoryService implements Callable<Integer> {
 
             System.out.println(String.format("\nDid not match %s: ", nonMatching.size()));
 
-            // this blew up the console
-//            for (String badHash : nonMatching) {
-//                System.out.println(badHash);
-//            }
+            if (verbose) {
+                System.out.println(nonMatching.stream().collect(Collectors.joining(", ")));
+            }
         }
 
         if (passed) {

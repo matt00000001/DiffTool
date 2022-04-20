@@ -20,10 +20,10 @@ public class LoadFileService implements Callable<Integer> {
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
 
-    @CommandLine.Option(names = {"--dat-path-1"}, description = "The path to a load file.")
+    @CommandLine.Option(names = {"--path-1"}, description = "The path to a load file.")
     private Path datPath1;
 
-    @CommandLine.Option(names = {"--dat-path-2"}, description = "The path to a load file.")
+    @CommandLine.Option(names = {"--path-2"}, description = "The path to a load file.")
     private Path datPath2;
 
     @CommandLine.Option(names = "--count-rows", description = "Count rows.")
@@ -38,32 +38,32 @@ public class LoadFileService implements Callable<Integer> {
     @CommandLine.Option(names = "--inventory", description = "Inventory headers found in both load files.")
     private boolean countHasValues;
 
-    @CommandLine.Option(names = "--inventory-column", description = "Inventory value counts for header -h.")
-    private boolean inventoryColumn;
+    @CommandLine.Option(names = "--column-comparison", description = "Compare data for column --column-name.")
+    private boolean columnComparison;
 
     @CommandLine.Option(names = "--full-comparison", description = "Compare the load files down to the value occurrences.")
     private boolean fullComparison;
 
-    @CommandLine.Option(names = "-v", description = "Find rows with values for header -h.")
-    private boolean findHasValues;
+    @CommandLine.Option(names = "--count-has-value", description = "Count rows with values for header --column-name.")
+    private boolean countHasValue;
 
-    @CommandLine.Option(names = "--substring", description = "Substring used to find values for header -h.")
+    @CommandLine.Option(names = "--substring", description = "Substring used to find values for header --column-name.")
     private String substring = "";
 
-    @CommandLine.Option(names = "-nv", description = "Find rows without values for header -h.")
-    private boolean findNotHasValues;
+    @CommandLine.Option(names = "--count-has-no-value", description = "Count rows without values for header --column-name.")
+    private boolean countHasNoValue;
 
-    @CommandLine.Option(names = "-h", description = "Header name.")
-    private String headerName;
+    @CommandLine.Option(names = "--column-name", description = "Column name.")
+    private String columnName;
 
     @CommandLine.Option(names = "-chv", description = "Compare has value by hashes.")
     private boolean compareHasValueByHashes;
 
-    @CommandLine.Option(names = "-pr", description = "Print row. Use -h and --value to search for the rows to print.")
+    @CommandLine.Option(names = "-pr", description = "Print row. Use --column-name and --value to search for the rows to print.")
     private boolean printRow;
 
-    @CommandLine.Option(names = "-p", description = "Used with -n and -nv to print the rows found.")
-    private boolean print;
+    @CommandLine.Option(names = "--verbose", description = "Verbose output option.")
+    private boolean verbose;
 
     @CommandLine.Option(names = "--value", description = "Value.")
     private String value;
@@ -80,37 +80,37 @@ public class LoadFileService implements Callable<Integer> {
             throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: --dat-path-1 does not exist", datPath1.toString()));
         }
 
-        if (!(countHasValues || inventoryColumn || findHasValues) && !datPath2.toFile().exists()) {
+        if (!(countHasValues || columnComparison || countHasValue) && !datPath2.toFile().exists()) {
             throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: --dat-path-2 does not exist", datPath2.toString()));
         }
 
-        if (findHasValues && (headerName == null ||  headerName.isBlank())) {
-            throw new CommandLine.ParameterException(spec.commandLine(), String.format("-h must be a header name", datPath2.toString()));
+        if (countHasValue && (columnName == null ||  columnName.isBlank())) {
+            throw new CommandLine.ParameterException(spec.commandLine(), String.format("--column-name must be a header name", datPath2.toString()));
         }
 
-        if (findNotHasValues && (headerName == null ||  headerName.isBlank())) {
-            throw new CommandLine.ParameterException(spec.commandLine(), String.format("-h must be a header name", datPath2.toString()));
+        if (countHasNoValue && (columnName == null ||  columnName.isBlank())) {
+            throw new CommandLine.ParameterException(spec.commandLine(), String.format("--column-name must be a header name", datPath2.toString()));
         }
 
-        if (compareHasValueByHashes && (headerName == null ||  headerName.isBlank())) {
-            throw new CommandLine.ParameterException(spec.commandLine(), String.format("-h must be a header name", datPath2.toString()));
+        if (compareHasValueByHashes && (columnName == null ||  columnName.isBlank())) {
+            throw new CommandLine.ParameterException(spec.commandLine(), String.format("--column-name must be a header name", datPath2.toString()));
         }
 
         if (countRows) {
             countRows();
         } else if (countHasValues) {
             countHasValues();
-        } else if (inventoryColumn) {
-            countValueOccurrences();
+        } else if (columnComparison) {
+            columnComparison();
         } else if (fullComparison) {
             fullComparison();
         } else if (compareHashes) {
             compareMD5SUMs();
         } else if (compareHasValueByHashes) {
             compareHasValueByHashes();
-        } else if (findHasValues) {
+        } else if (countHasValue) {
             findHasValues(true);
-        } else if (findNotHasValues) {
+        } else if (countHasNoValue) {
             findHasValues(false);
         } else if (printRow) {
             printRow();
@@ -164,12 +164,12 @@ public class LoadFileService implements Callable<Integer> {
         System.out.println("Test complete.");
     }
 
-    private void countValueOccurrences() throws IOException {
-        System.out.println("Inventory for column: " + headerName);
+    private void columnComparison() throws IOException {
+        System.out.println("Inventory for column: " + columnName);
 
         Map<String, List<String>> f1ValueToPaths = new HashMap<>();
         Map<String, List<String>> f2ValueToPaths = new HashMap<>();
-        compareInventoryCounts(getValueToCountMap(datPath1, headerName, f1ValueToPaths), getValueToCountMap(datPath2, headerName, f2ValueToPaths), f1ValueToPaths, f2ValueToPaths, true);
+        compareInventoryCounts(getValueToCountMap(datPath1, columnName, f1ValueToPaths), getValueToCountMap(datPath2, columnName, f2ValueToPaths), f1ValueToPaths, f2ValueToPaths, true);
 
         System.out.println("\nTest complete.");
     }
@@ -489,7 +489,7 @@ public class LoadFileService implements Callable<Integer> {
                 System.out.println("Not matching:\n" + countsDoNotMatch);
             }
 
-            System.out.println("Checking intersection for columns with same value occurrence counts:");
+            System.out.println("Checking value occurrence count for column intersection:");
 
             for (String key : countsMatch) {
                 Map<String, List<String>> f1ValueToPaths = new HashMap<>();
@@ -762,7 +762,7 @@ public class LoadFileService implements Callable<Integer> {
 
             String header = row;
             List<String> headerItems = Arrays.asList(t.reset(header).getTokenArray());
-            int headerIndex = headerItems.indexOf(headerName);
+            int headerIndex = headerItems.indexOf(columnName);
             List<String> results = new ArrayList<>();
             int count = 0;
             int idIndex = -1;
@@ -780,23 +780,21 @@ public class LoadFileService implements Callable<Integer> {
 
                 if (valueExists && !values[headerIndex].isBlank()) {
                     if (substring.isEmpty() || (!substring.isEmpty() && values[headerIndex].contains(substring))) {
-                        results.add(print ? row + "\n" : values[idIndex]);
+                        results.add(verbose ? row + "\n" : values[idIndex]);
                     }
                 } else if (!valueExists && values[headerIndex].isBlank()) {
-                    results.add(print ? row + "\n" : values[idIndex]);
+                    results.add(verbose ? row + "\n" : values[idIndex]);
                 }
             }
 
             System.out.println(String.format("%s rows found.", count));
 
             if (!results.isEmpty()) {
-                System.out.println(String.format("%s rows found %s values for header %s", results.size(), valueExists ? "with" : "without", headerName));
+                System.out.println(String.format("%s rows found %s values for header %s", results.size(), valueExists ? "with" : "without", columnName));
 
-                if (print) {
-                    System.out.println(header);
+                if (verbose) {
+                    System.out.println(results.stream().collect(Collectors.joining(", ")));
                 }
-
-                System.out.println(results.stream().collect(Collectors.joining()));
             }
         }
     }
@@ -817,7 +815,7 @@ public class LoadFileService implements Callable<Integer> {
 
             List<String> header = Arrays.asList(t.reset(row).getTokenArray());
 
-            int headerIndex = header.indexOf(headerName);
+            int headerIndex = header.indexOf(columnName);
             int MD5Index = header.indexOf("MD5SUM");
 
             while ((row = br.readLine()) != null) {
@@ -852,7 +850,7 @@ public class LoadFileService implements Callable<Integer> {
 
             List<String> header = Arrays.asList(t.reset(row).getTokenArray());
 
-            int headerIndex = header.indexOf(headerName);
+            int headerIndex = header.indexOf(columnName);
             int MD5Index = header.indexOf("MD5SUM");
 
             while ((row = br.readLine()) != null) {
@@ -896,7 +894,7 @@ public class LoadFileService implements Callable<Integer> {
 
             String header = row;
             List<String> headerItems = Arrays.asList(t.reset(header).getTokenArray());
-            int headerIndex = headerItems.indexOf(headerName);
+            int headerIndex = headerItems.indexOf(columnName);
             List<String> rows = new ArrayList<>();
 
             while ((row = br.readLine()) != null) {
