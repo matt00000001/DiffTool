@@ -105,16 +105,16 @@ public class JsonService implements Callable<Integer> {
     }
 
     public void fullComparison() throws IOException {
-        System.out.println("Extracting JSON data.");
+        System.out.println("Extracting JSON.");
 
         LinkedHashMap<String, Map<String, String>> IDToKeyValuesForJSON = getIDToKeyValuesForJson(JSONFile);
 
-        System.out.println("JSON data extraction complete.");
-        System.out.println("Extracting dat data.");
+        System.out.println("Items found in JSON: " + IDToKeyValuesForJSON.size());
+        System.out.println("Extracting DAT.");
 
         LinkedHashMap<String, Map<String, String>> IDToKeyValuesForDat = getIDToKeyValuesForDat(datPath);
 
-        System.out.println("Dat data extraction complete.");
+        System.out.println("Items found in DAT: " + IDToKeyValuesForDat.size());
 
         if (IDToKeyValuesForJSON.size() != IDToKeyValuesForDat.size()) {
             System.out.println(String.format("The JSON and dat file do not contain the same number of entries: " +
@@ -125,9 +125,13 @@ public class JsonService implements Callable<Integer> {
 
         List<String> notEqualIDs = new ArrayList<>();
 
+        int idsChecked = 0;
         for (Map.Entry<String, Map<String, String>> datEntry : IDToKeyValuesForDat.entrySet()) {
+            idsChecked ++;
             if (!IDToKeyValuesForJSON.containsKey(datEntry.getKey())) {
                 System.out.println(String.format("%s found in dat but not found in JSON.", datEntry.getKey()));
+
+                continue;
             }
 
             boolean valuesEqual = true;
@@ -142,8 +146,9 @@ public class JsonService implements Callable<Integer> {
             }
 
             for (Map.Entry<String, String> datData : datEntry.getValue().entrySet()) {
+                // Skip properties that have no value and were not included in the json object because they have no value.
                 if (datData.getValue().isBlank() && !IDToKeyValuesForJSON.get(datEntry.getKey()).containsKey(datData.getKey())) {
-                    return;
+                    continue;
                 }
 
                 if (!datData.getValue().equals(IDToKeyValuesForJSON.get(datEntry.getKey()).get(datData.getKey()))) {
@@ -156,6 +161,8 @@ public class JsonService implements Callable<Integer> {
                 notEqualIDs.add(datEntry.getKey());
             }
         }
+
+        System.out.println("Comparison complete.  Items checked: " + idsChecked);
 
         if (!notEqualIDs.isEmpty()) {
             System.out.println(String.format("IDs with values that do not match: \n%s", notEqualIDs.stream().collect(Collectors.joining(","))));

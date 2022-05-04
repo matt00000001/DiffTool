@@ -56,10 +56,10 @@ public class LoadFileService implements Callable<Integer> {
     @CommandLine.Option(names = "--column-name", description = "Column name.")
     private String columnName;
 
-    @CommandLine.Option(names = "-chv", description = "Compare has value by hashes.")
+    @CommandLine.Option(names = "--count-has-value-for-md5", description = "Compare has value by hashes.")
     private boolean compareHasValueByHashes;
 
-    @CommandLine.Option(names = "-pr", description = "Print row. Use --column-name and --value to search for the rows to print.")
+    @CommandLine.Option(names = "--print-row", description = "Print row. Use --column-name and --value to search for the rows to print.")
     private boolean printRow;
 
     @CommandLine.Option(names = "--verbose", description = "Verbose output option.")
@@ -77,11 +77,11 @@ public class LoadFileService implements Callable<Integer> {
     @Override
     public Integer call() throws IOException {
         if (!datPath1.toFile().exists()) {
-            throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: --dat-path-1 does not exist", datPath1.toString()));
+            throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: --path-1 does not exist", datPath1.toString()));
         }
 
         if (!(countHasValues || columnComparison || countHasValue) && !datPath2.toFile().exists()) {
-            throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: --dat-path-2 does not exist", datPath2.toString()));
+            throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: --path-2 does not exist", datPath2.toString()));
         }
 
         if (countHasValue && (columnName == null ||  columnName.isBlank())) {
@@ -152,12 +152,6 @@ public class LoadFileService implements Callable<Integer> {
         }
     }
 
-    /*
-    - verify paths have corresponding files
-    - verify columns have same values (column name argument)
-    - verify rows match md5 comparison
-    - find missing rows (include (has values) info)
-     */
     private void countHasValues() throws IOException {
         compareInventoryCounts(getHeaderToCountMap(datPath1), getHeaderToCountMap(datPath2));
 
@@ -226,7 +220,7 @@ public class LoadFileService implements Callable<Integer> {
         String countZero = "";
 
         if (!f1MinusF2.isEmpty()) {
-            System.out.println(String.format("\nFound only in -f1 (%s):", f1MinusF2.size()));
+            System.out.println(String.format("\nFound only in --path-1 (%s):", f1MinusF2.size()));
 
             for (String f1Only : f1MinusF2) {
                 if (f1ValuesToCount.get(f1Only) > 0) {
@@ -249,7 +243,7 @@ public class LoadFileService implements Callable<Integer> {
         countZero = "";
 
         if (!f2MinusF1.isEmpty()) {
-            System.out.println(String.format("\nFound only in -f2 (%s):", f2MinusF1.size()));
+            System.out.println(String.format("\nFound only in --path-2 (%s):", f2MinusF1.size()));
 
             for (String f2Only : f2MinusF1) {
                 if (f2ValuesToCount.get(f2Only) > 0) {
@@ -294,9 +288,9 @@ public class LoadFileService implements Callable<Integer> {
             for (String key : intersectionList) {
                 String keyLabel = key.isBlank() ? "[blank string]" : key;
                 if (!f1ValuesToCount.get(key).equals(f2ValuesToCount.get(key))) {
-                    countsDoNotMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
+                    countsDoNotMatch += String.format("--path-1 (%s) %s, --path-2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
                 } else {
-                    countsMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
+                    countsMatch += String.format("--path-1 (%s) %s, --path-2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
                 }
             }
 
@@ -312,10 +306,6 @@ public class LoadFileService implements Callable<Integer> {
 
     private boolean compareInventoryCounts(LinkedHashMap<String, Integer> f1ValuesToCount, LinkedHashMap<String, Integer> f2ValuesToCount,
                                         Map<String, List<String>> f1ValueToPaths, Map<String, List<String>> f2ValueToPaths, boolean print) {
-        /*
-        no differences and intersection matches
-        no value found in one and not in the other and all values have the same number of occurances.
-         */
         boolean matches = true;
         List<String> f1MinusF2 = new ArrayList<>(f1ValuesToCount.keySet());
         f1MinusF2.removeAll(f2ValuesToCount.keySet());
@@ -327,7 +317,7 @@ public class LoadFileService implements Callable<Integer> {
             matches = false;
 
             if (print) {
-                System.out.println(String.format("\nFound only in -f1 (%s):", f1MinusF2.size()));
+                System.out.println(String.format("\nFound only in --path-1 (%s):", f1MinusF2.size()));
 
                 for (String f1Only : f1MinusF2) {
                     System.out.println(String.format("(%s) %s, Paths: [%s]", f1ValuesToCount.get(f1Only), f1Only.isBlank() ? "[blank string]" : f1Only,
@@ -340,7 +330,7 @@ public class LoadFileService implements Callable<Integer> {
             matches = false;
 
             if (print) {
-                System.out.println(String.format("\nFound only in -f2 (%s):", f2MinusF1.size()));
+                System.out.println(String.format("\nFound only in --path-2 (%s):", f2MinusF1.size()));
 
                 for (String f2Only : f2MinusF1) {
                     System.out.println(String.format("(%s) %s, Paths: [%s]", f2ValuesToCount.get(f2Only), f2Only.isBlank() ? "[blank string]" : f2Only,
@@ -372,7 +362,7 @@ public class LoadFileService implements Callable<Integer> {
                 System.out.println(String.format("\nIntersection comparison (%s):", intersectionList.size()));
             }
 
-            String countsMatch = "";
+            String countsMatchPaths = "";
             String countsDoNotMatch = "";
             int matching = 0;
             int nonMatching = 0;
@@ -381,10 +371,10 @@ public class LoadFileService implements Callable<Integer> {
                 String keyLabel = key.isBlank() ? "[blank string]" : key;
                 if (!f1ValuesToCount.get(key).equals(f2ValuesToCount.get(key))) {
                     nonMatching++;
-                    countsDoNotMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
+                    countsDoNotMatch += String.format("--path-1 (%s) %s, --path-2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
                 } else {
                     matching++;
-                    countsMatch += String.format("-f1 (%s) %s, -f2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
+                    countsMatchPaths += String.format("--path-1 (%s) %s, --path-2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
                 }
             }
 
@@ -393,8 +383,8 @@ public class LoadFileService implements Callable<Integer> {
                     System.out.println("Matching: " + matching);
                 }
 
-//            if (!countsMatch.isEmpty()) {
-//                System.out.println("Matching:\n" + countsMatch);
+//            if (!countsMatchPaths.isEmpty()) {
+//                System.out.println("Matching paths:\n" + countsMatchPaths);
 //            }
 
                 if (nonMatching > 0) {
@@ -425,7 +415,9 @@ public class LoadFileService implements Callable<Integer> {
         String f1OnlyNotZero = "";
 
         if (!f1MinusF2.isEmpty()) {
-            System.out.println(String.format("\nFound only in -f1 (%s):", f1MinusF2.size()));
+            int hasValueCount = f1MinusF2.stream().filter(f -> f1ValuesToCount.get(f) > 0).collect(Collectors.toList()).size();
+
+            System.out.println(String.format("\nHas value in --path-1 only (%s):", hasValueCount));
 
             for (String f1Only : f1MinusF2) {
                 if (f1ValuesToCount.get(f1Only) > 0) {
@@ -441,7 +433,9 @@ public class LoadFileService implements Callable<Integer> {
         String f2OnlyNotZero = "";
 
         if (!f2MinusF1.isEmpty()) {
-            System.out.println(String.format("\nFound only in -f2 (%s):", f2MinusF1.size()));
+            int hasValueCount = f1MinusF2.stream().filter(f -> f1ValuesToCount.get(f) > 0).collect(Collectors.toList()).size();
+
+            System.out.println(String.format("\nHas value in --path-2 only (%s):", hasValueCount));
 
             for (String f2Only : f2MinusF1) {
                 if (f2ValuesToCount.get(f2Only) > 0) {
@@ -479,7 +473,7 @@ public class LoadFileService implements Callable<Integer> {
 
             for (String key : intersectionList) {
                 if (!f1ValuesToCount.get(key).equals(f2ValuesToCount.get(key))) {
-                    countsDoNotMatch += String.format("%s: -f1 (%s), -f2 (%s)\n", key.isBlank() ? "[blank string]" : key, f1ValuesToCount.get(key), f2ValuesToCount.get(key));
+                    countsDoNotMatch += String.format("%s: --path-1 (%s), --path-2 (%s)\n", key.isBlank() ? "[blank string]" : key, f1ValuesToCount.get(key), f2ValuesToCount.get(key));
                 } else {
                     countsMatch.add(key);
                 }
@@ -537,10 +531,7 @@ public class LoadFileService implements Callable<Integer> {
                 headerToCount.put(header1, 0);
             }
 
-            int count = 0;
             while ((row = br.readLine()) != null) {
-                count++;
-
                 String[] values = t.reset(row).getTokenArray();
 
                 for (int i = 0; i < values.length; i++) {
@@ -559,21 +550,21 @@ public class LoadFileService implements Callable<Integer> {
         List<String> hashes2 = getHashes(datPath2);
 
         if (hashes1.size() != hashes2.size()) {
-            System.out.println(String.format("%s hashes found in -f1 and %s hashes found in -f2", hashes1.size(), hashes2.size()));
+            System.out.println(String.format("%s hashes found in --path-1 and %s hashes found in --path-2", hashes1.size(), hashes2.size()));
         }
 
         List<String> hashes1MinusHashes2 = new ArrayList<>(hashes1);
         hashes1MinusHashes2.removeAll(hashes2);
 
         if (!hashes1MinusHashes2.isEmpty()) {
-            System.out.println(String.format("Hashes found in -f1 only:\n", hashes1MinusHashes2.stream().collect(Collectors.joining("\n"))));
+            System.out.println(String.format("Hashes found in --path-1 only:\n", hashes1MinusHashes2.stream().collect(Collectors.joining("\n"))));
         }
 
         List<String> hashes2MinusHashes1 = new ArrayList<>(hashes2);
         hashes2MinusHashes1.removeAll(hashes1);
 
         if (!hashes2MinusHashes1.isEmpty()) {
-            System.out.println(String.format("Hashes found in -f2 only:\n", hashes2MinusHashes1.stream().collect(Collectors.joining("\n"))));
+            System.out.println(String.format("Hashes found in --path-2 only:\n", hashes2MinusHashes1.stream().collect(Collectors.joining("\n"))));
         }
     }
 
@@ -631,44 +622,8 @@ public class LoadFileService implements Callable<Integer> {
         return s.matches("^[a-fA-F0-9]{32}$");
     }
 
-    public boolean isValidSHA1(String s) {
-        return s.matches("^[a-fA-F0-9]{40}$");
-    }
-
     private void compareDatFiles() throws IOException {
         boolean passed = true;
-
-        /*
-        row counts
-        compare headers
-            if there are missing headers, do any of them have values?
-        compare the values for each document
-            But there aren't document ids in common.  I'll need some other way of matching the rows in the 2 files.
-                maybe the hash and the paths? (hash and name).  But there are subdirectorires, so names aren't unique.
-        Media mm made a second subdirectory around 10k files.
-            to fix subdirectories, i need to go into the subdirectories and add those files to my list.  but the names are not guaranteed to be unique
-            across subdirectories.
-                for name comparison logic, if i get 2 of the same name the will both be in the list and when the loop that checks presence in other list
-                will check the other list multiple times.
-
-                if i put just the name in the list, i will not be able to access the file not knowing the subdirectory.  so i might need to put the
-                name, path, and hash in a map.
-
-                or i can report duplicate files and do nothing with them
-
-                for the non name check, there will just be a check of the number of times the hashes occur.
-                can the name check be changed to work based on hashes to fix the name issue?
-                explain what the name issue is...
-                    s1 contains a.txt s2 contains a.txt (a.txt is the same file)
-                    s1 contains a.txt s2 contains a.txt (a.txt is not the same file)
-                    name -> path -> hash
-                    name -> hash -> path
-                    hash -> path
-
-
-
-         */
-
         List<String> header1;
 
         try (BufferedReader br = Files.newBufferedReader(datPath1, StandardCharsets.UTF_8)) {
@@ -730,7 +685,7 @@ public class LoadFileService implements Callable<Integer> {
         if (!header1MinusHeader2.isEmpty()) {
             String missing = header1MinusHeader2.stream().collect(Collectors.joining("\n"));
 
-            System.out.println("\nExist in -f1 and missing in -f2:\n" + missing);
+            System.out.println("\nExist in --path-1 and missing in --path-2:\n" + missing);
         }
 
         List<String> header2MinusHeader1 = new ArrayList<>(header2);
@@ -739,7 +694,7 @@ public class LoadFileService implements Callable<Integer> {
         if (!header2MinusHeader1.isEmpty()) {
             String missing = header2MinusHeader1.stream().collect(Collectors.joining("\n"));
 
-            System.out.println("\nExist in -f2 and missing in -f1:\n" + missing);
+            System.out.println("\nExist in --path-2 and missing in --path-1:\n" + missing);
         }
 
         if (passed) {
@@ -873,12 +828,12 @@ public class LoadFileService implements Callable<Integer> {
         Set<String> f1HasValueMinusf2HasValue = new HashSet<>(f1HasValue);
         f1HasValueMinusf2HasValue.removeAll(f2HasValue);
 
-        System.out.println(String.format("Has value in -f1 and not in -f2 (%s):\n%s", f1HasValueMinusf2HasValue.size(), f1HasValueMinusf2HasValue.stream().collect(Collectors.joining("\n"))));
+        System.out.println(String.format("Has value in --path-1 and not in --path-2 (%s):\n%s", f1HasValueMinusf2HasValue.size(), f1HasValueMinusf2HasValue.stream().collect(Collectors.joining("\n"))));
 
         Set<String> f2HasValueMinusf1HasValue = new HashSet<>(f2HasValue);
         f2HasValueMinusf1HasValue.removeAll(f1HasValue);
 
-        System.out.println(String.format("Has value in -f2 and not in -f1 (%s):\n%s", f2HasValueMinusf1HasValue.size(), f2HasValueMinusf1HasValue.stream().collect(Collectors.joining("\n"))));
+        System.out.println(String.format("Has value in --path-2 and not in --path-1 (%s):\n%s", f2HasValueMinusf1HasValue.size(), f2HasValueMinusf1HasValue.stream().collect(Collectors.joining("\n"))));
     }
 
     private void printRow() throws IOException {

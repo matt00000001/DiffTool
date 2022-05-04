@@ -44,6 +44,8 @@ public class DirectoryService implements Callable<Integer> {
     @Option(names = {"--verbose"}, description = "Verbose output option.")
     boolean verbose;
 
+    @Option(names = {"--ignore-white-space-files"}, description = "Ignore files with white space only when using --MD5.")
+    boolean ignoreWhiteSpaceFiles;
     /**
      * Diff directories.
      *
@@ -230,12 +232,12 @@ public class DirectoryService implements Callable<Integer> {
         List<String> d1Only = new ArrayList<>(d1HashToPaths.keySet());
         d1Only.removeAll(d2HashToPaths.keySet());
 
-        boolean passed = logMissingHashes(path1, d1NativeNameToPath, d1HashToPaths, d1Only);
+        boolean passed = logMissingHashes(path1, "--path-1", d1NativeNameToPath, d1HashToPaths, d1Only);
 
         List<String> d2Only = new ArrayList<>(d2HashToPaths.keySet());
         d2Only.removeAll(d1HashToPaths.keySet());
 
-        passed = logMissingHashes(path2, d2NativeNameToPath, d2HashToPaths, d2Only);
+        passed = logMissingHashes(path2, "--path-2", d2NativeNameToPath, d2HashToPaths, d2Only);
 
         String nonMatchingDuplicateCounts = "";
 
@@ -272,7 +274,7 @@ public class DirectoryService implements Callable<Integer> {
                     }
 
                     nonMatchingDuplicateCounts += String.format("\n%s (MD5) has %s occurrences in --path-1 and %s occurrences in --path-2:\n%s",
-                            entry.getKey(), entry.getValue().size(), paths.size(), files);
+                            entry.getKey(), entry.getValue().size(), paths.size(), entry.getKey().equals("WHITE_SPACE_ONLY_EXTRACTED_TEXT") ? "WHITE_SPACE_ONLY_EXTRACTED_TEXT: paths omitted" : files);
                 }
             }
         }
@@ -290,13 +292,13 @@ public class DirectoryService implements Callable<Integer> {
         }
     }
 
-    private boolean logMissingHashes(Path root, Map<String, String> nativeNameToPath, LinkedHashMap<String, List<String>> hashToPaths, List<String> exclusiveHashes) {
+    private boolean logMissingHashes(Path root, String directoryName, Map<String, String> nativeNameToPath, LinkedHashMap<String, List<String>> hashToPaths, List<String> exclusiveHashes) {
         boolean passed = true;
 
         if (!exclusiveHashes.isEmpty()) {
             passed = false;
 
-            System.out.println(String.format("\nExists in %s only (%s): ", root.getFileName(), exclusiveHashes.size()));
+            System.out.println(String.format("\nExists in %s only (%s): ", directoryName, exclusiveHashes.size()));
 
             for (String hash : exclusiveHashes) {
                 String paths = hashToPaths.get(hash).stream().map(path -> {
@@ -367,7 +369,7 @@ public class DirectoryService implements Callable<Integer> {
                 fileContents = fileContents.substring(1);
             }
 
-            if (fileContents.isBlank()) {
+            if (fileContents.isBlank() && ignoreWhiteSpaceFiles) {
                 MD5 = "WHITE_SPACE_ONLY_EXTRACTED_TEXT";
             }
         }
