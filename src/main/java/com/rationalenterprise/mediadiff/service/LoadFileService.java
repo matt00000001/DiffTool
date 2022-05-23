@@ -59,8 +59,8 @@ public class LoadFileService implements Callable<Integer> {
     @CommandLine.Option(names = "--count-has-value-for-md5", description = "Compare has value by hashes.")
     private boolean compareHasValueByHashes;
 
-    @CommandLine.Option(names = "--print-row", description = "Print row. Use --column-name and --value to search for the rows to print.")
-    private boolean printRow;
+    @CommandLine.Option(names = "--print-has-value", description = "Print rows that have value. Use --column-name and --value to search for the rows to print.")
+    private boolean printHasValue;
 
     @CommandLine.Option(names = "--verbose", description = "Verbose output option.")
     private boolean verbose;
@@ -112,7 +112,7 @@ public class LoadFileService implements Callable<Integer> {
             findHasValues(true);
         } else if (countHasNoValue) {
             findHasValues(false);
-        } else if (printRow) {
+        } else if (printHasValue) {
             printRow();
         } else if (compareDatHashes) {
             compareDatHashes();
@@ -483,7 +483,7 @@ public class LoadFileService implements Callable<Integer> {
                 System.out.println("Not matching:\n" + countsDoNotMatch);
             }
 
-            System.out.println("Checking value occurrence count for column intersection:");
+            System.out.println("Matching:\nChecking value occurrence count for column intersection:");
 
             for (String key : countsMatch) {
                 Map<String, List<String>> f1ValueToPaths = new HashMap<>();
@@ -492,7 +492,7 @@ public class LoadFileService implements Callable<Integer> {
                 boolean matches = compareInventoryCounts(getValueToCountMap(datPath1, key, f1ValueToPaths), getValueToCountMap(datPath2, key, f2ValueToPaths), f1ValueToPaths, f2ValueToPaths, false);
 
                 if (!matches) {
-                    System.out.println(String.format("%s exists in both load files, but the value occurrence counts do not match", key));
+                    System.out.println(String.format("%s exists %s times in both load files, but the aggregations of those values do not match (for more information run the --column-comparison command)", key, f1ValuesToCount.get(key)));
                 }
             }
         }
@@ -742,13 +742,15 @@ public class LoadFileService implements Callable<Integer> {
                 }
             }
 
-            System.out.println(String.format("%s rows found.", count));
+            System.out.println(String.format("The dat contains %s rows.", count));
 
-            if (!results.isEmpty()) {
+            if (results.isEmpty()) {
+                System.out.println("No matches found.");
+            } else {
                 System.out.println(String.format("%s rows found %s values for header %s", results.size(), valueExists ? "with" : "without", columnName));
 
                 if (verbose) {
-                    System.out.println(results.stream().collect(Collectors.joining(", ")));
+                    System.out.println(header + "\n" + results.stream().collect(Collectors.joining(", ")));
                 }
             }
         }
@@ -851,8 +853,11 @@ public class LoadFileService implements Callable<Integer> {
             List<String> headerItems = Arrays.asList(t.reset(header).getTokenArray());
             int headerIndex = headerItems.indexOf(columnName);
             List<String> rows = new ArrayList<>();
+            int count = 0;
 
             while ((row = br.readLine()) != null) {
+                count++;
+
                 String[] values = t.reset(row).getTokenArray();
 
                 if (values[headerIndex].equals(value)) {
@@ -860,11 +865,14 @@ public class LoadFileService implements Callable<Integer> {
                 }
             }
 
-            System.out.println(String.format("%s rows found.", rows.size()));
-            System.out.println(String.format("Header:\n%s", header));
+            System.out.println(String.format("The dat contains %s rows.", count));
 
-            if (!rows.isEmpty()) {
-                System.out.println(rows.stream().collect(Collectors.joining("\n")));
+            if (rows.isEmpty()) {
+                System.out.println("No matches found.");
+            } else {
+                System.out.println(String.format("%s rows found:", rows.size()));
+
+                System.out.println(header + "\n" + rows.stream().collect(Collectors.joining("\n")));
             }
         }
     }
