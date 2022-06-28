@@ -299,22 +299,46 @@ public class DirectoryService implements Callable<Integer> {
             passed = false;
 
             System.out.println(String.format("\nExists in %s only (%s): ", directoryName, exclusiveHashes.size()));
+            int hashForDatOnly = 0;
+            int datNativeCount = 0;
+            String log = "";
 
             for (String hash : exclusiveHashes) {
-                String paths = hashToPaths.get(hash).stream().map(path -> {
+                int hashDatCount = 0;
+                String paths = "";
+
+                for (String path : hashToPaths.get(hash)) {
                     if (path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
                         long extractedTextSize = new File(root + File.separator + path).length();
                         int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
                         String nativePath = nativeNameToPath.get(extensionIndex == -1 ? path : path.substring(0, extensionIndex));
 
-                        return String.format("[%s, %s bytes, Native file: %s]\n", path, extractedTextSize, nativePath);
-                    } else {
-                        return path + "\n";
-                    }
-                }).collect(Collectors.joining());
+                        int lastPeriodIndex = nativePath.lastIndexOf(".");
 
-                System.out.println(String.format("\n%s (MD5):\n %s", hash, paths));
+                        if (lastPeriodIndex != -1 && ".dat".equalsIgnoreCase(nativePath.substring(lastPeriodIndex))) {
+                            hashDatCount++;
+                            datNativeCount++;
+                        }
+
+                        paths += String.format("[%s, %s bytes, Native file: %s]\n", path, extractedTextSize, nativePath);
+                    } else {
+                        paths += path + "\n";
+                    }
+                }
+
+                if (hashToPaths.get(hash).size() == hashDatCount) {
+                    hashForDatOnly++;
+                } else {
+                    log += String.format("\n%s (MD5):\n %s", hash, paths);
+                }
             }
+
+            if (datNativeCount > 0) {
+                System.out.println(String.format("Hashes with exclusively dat natives: %s", hashForDatOnly));
+                System.out.println(String.format("Dat native extracted text hashes found in this path only: %s", datNativeCount));
+            }
+
+            System.out.println(log);
         }
 
         return passed;
