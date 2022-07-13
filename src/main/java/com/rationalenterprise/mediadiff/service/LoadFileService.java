@@ -187,6 +187,7 @@ public class LoadFileService implements Callable<Integer> {
             int columnIndex = header.lastIndexOf(headerName);
             int pathIndex = -1;
 
+            // Get correct path defined in media manager or content extractor.
             if (Collections.frequency(header,"PATH") == 1) {
                 pathIndex = header.lastIndexOf("PATH");
             } else if (Collections.frequency(header,"NATIVE_PATH") == 1) {
@@ -196,13 +197,18 @@ public class LoadFileService implements Callable<Integer> {
             while ((row = br.readLine()) != null) {
                 String[] values = t.reset(row).getTokenArray();
 
+                // Increment the value occurrence count.
                 valueToCount.put(values[columnIndex], valueToCount.getOrDefault(values[columnIndex], 0) + 1);
 
                 if (!valueToPath.containsKey(values[columnIndex])) {
                     valueToPath.put(values[columnIndex], new ArrayList<>());
                 }
 
-               valueToPath.get(values[columnIndex]).add(values[pathIndex].isBlank() ? values[pathIndex] : values[pathIndex].substring(values[pathIndex].lastIndexOf("\\")));
+                // Determine the correct file separator (linux or windows).
+                String fileSeparator = values[pathIndex].contains("/") ? "/" : "\\";
+
+                // Store the path to the native for logging info to the user.
+                valueToPath.get(values[columnIndex]).add(values[pathIndex].isBlank() ? values[pathIndex] : values[pathIndex].substring(values[pathIndex].lastIndexOf(fileSeparator)));
             }
         }
 
