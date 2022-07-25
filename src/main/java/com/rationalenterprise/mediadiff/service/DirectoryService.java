@@ -38,6 +38,9 @@ public class DirectoryService implements Callable<Integer> {
             " names cannot be used and looking at the MD5s is the best attempt we can make to see if the directories contain the same files.")
     boolean checkMD5Only;
 
+    @Option(names = {"--MD5-natives"}, description = "Used with --MD5 to check MD5s of natives only (ie ignores extracted text files).")
+    boolean md5NativesOnly = false;
+
     @Option(names = {"--full-comparison"}, description = "Check if directories are equivalent by checking: subdirectory, file name, and MD5, for all files in both directories.")
     boolean fullComparison;
 
@@ -84,7 +87,7 @@ public class DirectoryService implements Callable<Integer> {
     }
 
     private void findNativesWithoutText() {
-        List<String> names = getSortedParentDepthNames(path1);
+        List<String> names = getSortedRelativePaths(path1);
         List<String> nativesWithoutText = new ArrayList<>();
 
         for (String name : names) {
@@ -162,7 +165,7 @@ public class DirectoryService implements Callable<Integer> {
     private LinkedHashMap<String, Integer> getExtensionCounts(Path directory) {
         Map<String, Integer> extensionCounts = new HashMap<>();
 
-        for (String name : getSortedParentDepthNames(directory)) {
+        for (String name : getSortedRelativePaths(directory)) {
             int extensionIndex = name.lastIndexOf(".");
             String extension = extensionIndex == -1 ? "" : name.substring(extensionIndex);
 
@@ -213,21 +216,24 @@ public class DirectoryService implements Callable<Integer> {
      * file size, and native file
      */
     private void checkMD5Only() throws IOException {
-        List<String> d1Paths = getSortedParentDepthNames(path1);
-        List<String> d2Paths = getSortedParentDepthNames(path2);
+        /*
+        get the id to native path map using the load file so no native paths are null below.
+         */
+        List<String> d1Paths = getSortedRelativePaths(path1);
+        List<String> d2Paths = getSortedRelativePaths(path2);
 
         System.out.println("--path-1 paths found: " + d1Paths.size());
         System.out.println("--path-2 paths found: " + d2Paths.size());
 
-        Map<String, String> d1NativeNameToPath = new HashMap<>();
         LinkedHashMap<String, List<String>> d1HashToPaths = new LinkedHashMap<>();
+        Map<String, String> d1NativeNameToPath = new HashMap<>();
 
-        populateHashComparisonMaps(path1, d1Paths, d1HashToPaths, d1NativeNameToPath);
+        populateMD5ValidationMaps(path1, d1Paths, d1HashToPaths, d1NativeNameToPath);
 
-        Map<String, String> d2NativeNameToPath = new HashMap<>();
         LinkedHashMap<String, List<String>> d2HashToPaths = new LinkedHashMap<>();
+        Map<String, String> d2NativeNameToPath = new HashMap<>();
 
-        populateHashComparisonMaps(path2, d2Paths, d2HashToPaths, d2NativeNameToPath);
+        populateMD5ValidationMaps(path2, d2Paths, d2HashToPaths, d2NativeNameToPath);
 
         List<String> d1Only = new ArrayList<>(d1HashToPaths.keySet());
         d1Only.removeAll(d2HashToPaths.keySet());
@@ -251,11 +257,24 @@ public class DirectoryService implements Callable<Integer> {
 
                     for (String path : entry.getValue()) {
                         if (path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
-                            long extractedTextSize = new File(path1 + File.separator + path).length();
-                            int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
-                            String nativePath = d1NativeNameToPath.get(extensionIndex == -1 ? path : path.substring(0, extensionIndex));
+                            // This excludes extracted text in the output.
+                            if (!md5NativesOnly) {
+                                long extractedTextSize = new File(path1 + File.separator + path).length();
+                                int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
 
-                            files += String.format("[%s, %s bytes, Native file: %s]\n", path, extractedTextSize, nativePath);
+                                /*
+                                The native will not be found in the natives directory unless it's a subdocument in an archive.
+                                I would need the load file to look up the native's path.
+                                Native path will be null here if it's not in the native directory which is passed in by the path
+                                 */
+                                String nativePath = d1NativeNameToPath.get(extensionIndex == -1 ? path : path.substring(0, extensionIndex));
+
+                                if (nativePath == null) {
+                                    nativePath = "Find path in load file using ID: " + (extensionIndex == -1 ? path : path.substring(0, extensionIndex));
+                                }
+
+                                files += String.format("[%s, %s bytes, Native file: %s]\n", path, extractedTextSize, nativePath);
+                            }
                         } else {
                             files += String.format("%s\n", path);
                         }
@@ -263,11 +282,18 @@ public class DirectoryService implements Callable<Integer> {
 
                     for (String path : paths) {
                         if (path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
-                            long extractedTextSize = new File(path2 + File.separator + path).length();
-                            int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
-                            String nativePath = d2NativeNameToPath.get(extensionIndex == -1 ? path : path.substring(0, extensionIndex));
+                            // This excludes extracted text in the output.
+                            if (!md5NativesOnly) {
+                                long extractedTextSize = new File(path2 + File.separator + path).length();
+                                int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
+                                String nativePath = d2NativeNameToPath.get(extensionIndex == -1 ? path : path.substring(0, extensionIndex));
 
-                            files += String.format("[%s, %s bytes, Native file: %s]\n", path, extractedTextSize, nativePath);
+                                if (nativePath == null) {
+                                    nativePath = "Find path in load file using ID: " + (extensionIndex == -1 ? path : path.substring(0, extensionIndex));
+                                }
+
+                                files += String.format("[%s, %s bytes, Native file: %s]\n", path, extractedTextSize, nativePath);
+                            }
                         } else {
                             files += String.format("%s\n", path);
                         }
@@ -309,18 +335,33 @@ public class DirectoryService implements Callable<Integer> {
 
                 for (String path : hashToPaths.get(hash)) {
                     if (path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
-                        long extractedTextSize = new File(root + File.separator + path).length();
-                        int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
-                        String nativePath = nativeNameToPath.get(extensionIndex == -1 ? path : path.substring(0, extensionIndex));
+                        if (!md5NativesOnly) {
+                            long extractedTextSize = new File(root + File.separator + path).length();
+                            int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
+                            String nativePath = nativeNameToPath.get(extensionIndex == -1 ? path : path.substring(0, extensionIndex));
 
-                        int lastPeriodIndex = nativePath.lastIndexOf(".");
+                            // In this if block, we keep count of native dat files for extracted text inventory purposes.
 
-                        if (lastPeriodIndex != -1 && ".dat".equalsIgnoreCase(nativePath.substring(lastPeriodIndex))) {
-                            hashDatCount++;
-                            datNativeCount++;
+                            /*
+                            The native will not be found in the natives directory unless it's a subdocument in an archive.
+                            I would need the load file to look up the native's path.
+                            Native path will be null here if it's not in the native directory which is passed in by the path
+                             */
+
+
+                            if (nativePath == null) {
+                                nativePath = "Find path in load file using ID: " + (extensionIndex == -1 ? path : path.substring(0, extensionIndex));
+                            } else {
+                                int lastPeriodIndex = nativePath.lastIndexOf(".");
+
+                                if (lastPeriodIndex != -1 && ".dat".equalsIgnoreCase(nativePath.substring(lastPeriodIndex))) {
+                                    hashDatCount++;
+                                    datNativeCount++;
+                                }
+                            }
+
+                            paths += String.format("[%s, %s bytes, Native file: %s]\n", path, extractedTextSize, nativePath);
                         }
-
-                        paths += String.format("[%s, %s bytes, Native file: %s]\n", path, extractedTextSize, nativePath);
                     } else {
                         paths += path + "\n";
                     }
@@ -329,7 +370,10 @@ public class DirectoryService implements Callable<Integer> {
                 if (hashToPaths.get(hash).size() == hashDatCount) {
                     hashForDatOnly++;
                 } else {
-                    log += String.format("\n%s (MD5):\n %s", hash, paths);
+                    // paths can be empty if md5NativesOnly is true and all the md5s belong to extracted text.
+                    if (!paths.isEmpty()) {
+                        log += String.format("\n%s (MD5):\n %s", hash, paths);
+                    }
                 }
             }
 
@@ -351,7 +395,7 @@ public class DirectoryService implements Callable<Integer> {
      * @param hashToPaths
      * @throws IOException
      */
-    private void populateHashComparisonMaps(Path root, List<String> paths, Map<String, List<String>> hashToPaths, Map<String, String> nativeNameToPath) throws IOException {
+    private void populateMD5ValidationMaps(Path root, List<String> paths, Map<String, List<String>> hashToPaths, Map<String, String> nativeNameToPath) throws IOException {
         int count = 0;
 
         for (String path : paths) {
@@ -361,6 +405,7 @@ public class DirectoryService implements Callable<Integer> {
                 System.out.print(String.format("\rComputed hashes: %s of %s", count, paths.size()));
             }
 
+            // Put all native names in the nativeNameToPath map (don't put extracted text in it).
             if (!path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
                 int extensionIndex = path.lastIndexOf(".");
 
@@ -418,8 +463,8 @@ public class DirectoryService implements Callable<Integer> {
      * Missing files and files that don't pass will be logged.
      */
     private void fullComparison() {
-        List<String> d1Names = getSortedParentDepthNames(path1);
-        List<String> d2Names = getSortedParentDepthNames(path2);
+        List<String> d1Names = getSortedRelativePaths(path1);
+        List<String> d2Names = getSortedRelativePaths(path2);
 
         System.out.println("--path-1 file count: " + d1Names.size());
         System.out.println("--path-2 file count: " + d2Names.size());
@@ -495,7 +540,7 @@ public class DirectoryService implements Callable<Integer> {
      * @param path
      * @return
      */
-    private List<String> getSortedParentDepthNames(Path path) {
+    private List<String> getSortedRelativePaths(Path path) {
         List<String> names = new ArrayList<>();
 
         for (File file : path.toFile().listFiles()) {

@@ -36,7 +36,7 @@ public class LoadFileService implements Callable<Integer> {
     private boolean compareDatHashes;
 
     @CommandLine.Option(names = "--inventory", description = "Inventory headers found in both load files.")
-    private boolean countHasValues;
+    private boolean inventory;
 
     @CommandLine.Option(names = "--column-comparison", description = "Compare data for column --column-name.")
     private boolean columnComparison;
@@ -44,10 +44,10 @@ public class LoadFileService implements Callable<Integer> {
     @CommandLine.Option(names = "--full-comparison", description = "Compare the load files down to the value occurrences.")
     private boolean fullComparison;
 
-    @CommandLine.Option(names = "--count-has-value", description = "Count rows with values for header --column-name.")
+    @CommandLine.Option(names = "--count-has-value", description = "Count rows with values for --column-name.")
     private boolean countHasValue;
 
-    @CommandLine.Option(names = "--substring", description = "Substring used to find values for header --column-name.")
+    @CommandLine.Option(names = "--substring", description = "Substring used to match values for --column-name.")
     private String substring = "";
 
     @CommandLine.Option(names = "--count-has-no-value", description = "Count rows without values for header --column-name.")
@@ -80,7 +80,7 @@ public class LoadFileService implements Callable<Integer> {
             throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: --path-1 does not exist", datPath1.toString()));
         }
 
-        if (!(countHasValues || columnComparison || countHasValue) && !datPath2.toFile().exists()) {
+        if (!(inventory || columnComparison || countHasValue) && !datPath2.toFile().exists()) {
             throw new CommandLine.ParameterException(spec.commandLine(), String.format("Invalid option: --path-2 does not exist", datPath2.toString()));
         }
 
@@ -98,8 +98,8 @@ public class LoadFileService implements Callable<Integer> {
 
         if (countRows) {
             countRows();
-        } else if (countHasValues) {
-            countHasValues();
+        } else if (inventory) {
+            inventory();
         } else if (columnComparison) {
             columnComparison();
         } else if (fullComparison) {
@@ -152,7 +152,7 @@ public class LoadFileService implements Callable<Integer> {
         }
     }
 
-    private void countHasValues() throws IOException {
+    private void inventory() throws IOException {
         compareInventoryCounts(getHeaderToCountMap(datPath1), getHeaderToCountMap(datPath2));
 
         System.out.println("Test complete.");
