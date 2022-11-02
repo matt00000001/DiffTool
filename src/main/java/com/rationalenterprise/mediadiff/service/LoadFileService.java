@@ -65,6 +65,9 @@ public class LoadFileService implements Callable<Integer> {
     @CommandLine.Option(names = "--verbose", description = "Verbose output option.")
     private boolean verbose;
 
+    @CommandLine.Option(names = "--truncate", description = "Truncates the printed output (only supported by --column-comparison).")
+    private int truncate = 0;
+
     @CommandLine.Option(names = "--value", description = "Value.")
     private String value;
 
@@ -109,9 +112,9 @@ public class LoadFileService implements Callable<Integer> {
         } else if (compareHasValueByHashes) {
             compareHasValueByHashes();
         } else if (countHasValue) {
-            findHasValues(true);
+            countHasValues(true);
         } else if (countHasNoValue) {
-            findHasValues(false);
+            countHasValues(false);
         } else if (printHasValue) {
             printRow();
         } else if (compareDatHashes) {
@@ -325,7 +328,15 @@ public class LoadFileService implements Callable<Integer> {
             if (print) {
                 System.out.println(String.format("\nFound only in --path-1 (%s):", f1MinusF2.size()));
 
+                int printed = 0;
+
                 for (String f1Only : f1MinusF2) {
+                    if (truncate != 0 && printed > truncate) {
+                        break;
+                    }
+
+                    printed++;
+
                     System.out.println(String.format("(%s) %s, Paths: [%s]", f1ValuesToCount.get(f1Only), f1Only.isBlank() ? "[blank string]" : f1Only,
                             f1ValueToPaths.get(f1Only).stream().collect(Collectors.joining(","))));
                 }
@@ -338,7 +349,15 @@ public class LoadFileService implements Callable<Integer> {
             if (print) {
                 System.out.println(String.format("\nFound only in --path-2 (%s):", f2MinusF1.size()));
 
+                int printed = 0;
+
                 for (String f2Only : f2MinusF1) {
+                    if (truncate != 0 && printed > truncate) {
+                        break;
+                    }
+
+                    printed++;
+
                     System.out.println(String.format("(%s) %s, Paths: [%s]", f2ValuesToCount.get(f2Only), f2Only.isBlank() ? "[blank string]" : f2Only,
                             f2ValueToPaths.get(f2Only).stream().collect(Collectors.joining(","))));
                 }
@@ -370,17 +389,27 @@ public class LoadFileService implements Callable<Integer> {
 
             String countsMatchPaths = "";
             String countsDoNotMatch = "";
-            int matching = 0;
             int nonMatching = 0;
+            int matching = 0;
 
             for (String key : intersectionList) {
+                if (truncate > 0 && (nonMatching >= truncate && matching >= truncate)) {
+                    break;
+                }
+
                 String keyLabel = key.isBlank() ? "[blank string]" : key;
                 if (!f1ValuesToCount.get(key).equals(f2ValuesToCount.get(key))) {
+                    if (truncate > 0 && nonMatching < truncate) {
+                        countsDoNotMatch += String.format("--path-1 (%s) %s, --path-2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
+                    }
+
                     nonMatching++;
-                    countsDoNotMatch += String.format("--path-1 (%s) %s, --path-2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
                 } else {
+                    if (truncate > 0 && matching < truncate) {
+                        countsMatchPaths += String.format("--path-1 (%s) %s, --path-2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
+                    }
+
                     matching++;
-                    countsMatchPaths += String.format("--path-1 (%s) %s, --path-2 (%s) %s\n", f1ValuesToCount.get(key), keyLabel, f2ValuesToCount.get(key), keyLabel);
                 }
             }
 
@@ -710,7 +739,7 @@ public class LoadFileService implements Callable<Integer> {
         }
     }
 
-    private void findHasValues(boolean valueExists) throws IOException {
+    private void countHasValues(boolean valueExists) throws IOException {
         try (BufferedReader br = Files.newBufferedReader(datPath1, StandardCharsets.UTF_8)) {
             String row = br.readLine();
 
@@ -753,7 +782,7 @@ public class LoadFileService implements Callable<Integer> {
             if (results.isEmpty()) {
                 System.out.println("No matches found.");
             } else {
-                System.out.println(String.format("%s rows found %s values for header %s", results.size(), valueExists ? "with" : "without", columnName));
+                System.out.println(String.format("%s rows found %s %s for %s", results.size(), valueExists ? "with" : "without", (substring.isEmpty() ? "values" : "substring " + substring), columnName));
 
                 if (verbose) {
                     System.out.println(header + "\n" + results.stream().collect(Collectors.joining(", ")));
