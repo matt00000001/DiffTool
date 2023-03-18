@@ -39,7 +39,7 @@ public class DirectoryService implements Callable<Integer> {
     boolean checkMD5Only;
 
     @Option(names = {"--MD5-natives"}, description = "Used with --MD5 to check MD5s of natives only (ie ignores extracted text files).")
-    boolean md5NativesOnly = false;
+    boolean nativeMd5 = false;
 
     @Option(names = {"--full-comparison"}, description = "Check if directories are equivalent by checking: subdirectory, file name, and MD5, for all files in both directories.")
     boolean fullComparison;
@@ -209,7 +209,7 @@ public class DirectoryService implements Callable<Integer> {
      * does not match, the file extension is checked and the size of the native is logged.
      *
      * To generalize this output to give insight into why the hashes are not are dont have matches
-     * if the hash comes from an extracted text the out put will be [extracted text, size, native: native.pst]
+     * if the hash comes from an extracted text the out put will be [extracted text, size, native: native.msg]
      *
      * put the name key and path value in a map, when the extracted text is checked in the intersection part,
      * if the hashes dont match, check if it's an extracted text file, if it is, then print the
@@ -258,7 +258,7 @@ public class DirectoryService implements Callable<Integer> {
                     for (String path : entry.getValue()) {
                         if (path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
                             // This excludes extracted text in the output.
-                            if (!md5NativesOnly) {
+                            if (!nativeMd5) {
                                 long extractedTextSize = new File(path1 + File.separator + path).length();
                                 int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
 
@@ -283,7 +283,7 @@ public class DirectoryService implements Callable<Integer> {
                     for (String path : paths) {
                         if (path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
                             // This excludes extracted text in the output.
-                            if (!md5NativesOnly) {
+                            if (!nativeMd5) {
                                 long extractedTextSize = new File(path2 + File.separator + path).length();
                                 int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
                                 String nativePath = d2NativeNameToPath.get(extensionIndex == -1 ? path : path.substring(0, extensionIndex));
@@ -335,7 +335,7 @@ public class DirectoryService implements Callable<Integer> {
 
                 for (String path : hashToPaths.get(hash)) {
                     if (path.endsWith(EXTRACTED_TEXT_EXTENSION)) {
-                        if (!md5NativesOnly) {
+                        if (!nativeMd5) {
                             long extractedTextSize = new File(root + File.separator + path).length();
                             int extensionIndex = path.lastIndexOf(EXTRACTED_TEXT_EXTENSION);
                             String nativePath = nativeNameToPath.get(extensionIndex == -1 ? path : path.substring(0, extensionIndex));
@@ -544,8 +544,16 @@ public class DirectoryService implements Callable<Integer> {
         List<String> names = new ArrayList<>();
 
         for (File file : path.toFile().listFiles()) {
+            if (nativeMd5 && file.toPath().toString().endsWith(EXTRACTED_TEXT_EXTENSION)) {
+                continue;
+            }
+
             if (file.isDirectory()) {
                 for (File subdirectoryFile : file.listFiles()) {
+                    if (nativeMd5 && subdirectoryFile.toPath().toString().endsWith(EXTRACTED_TEXT_EXTENSION)) {
+                        continue;
+                    }
+
                     names.add(subdirectoryFile.getParentFile().getName() + File.separator + subdirectoryFile.getName());
                 }
             } else {
