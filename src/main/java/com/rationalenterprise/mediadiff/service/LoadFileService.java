@@ -38,13 +38,13 @@ public class LoadFileService implements Callable<Integer> {
     @CommandLine.Option(names = "--inventory", description = "Inventory headers found in both load files.")
     private boolean inventory;
 
-    @CommandLine.Option(names = "--column-comparison", description = "Compare data for column --column-name.")
+    @CommandLine.Option(names = "--column-comparison", description = "Compare data for column --column-name (use --truncate to print native file paths which correspond to the value sources.  --truncate defaults to 0 which means no rows are printed.  Use a non-zero number to print native paths.).")
     private boolean columnComparison;
 
     @CommandLine.Option(names = "--full-comparison", description = "Compare the load files down to the value occurrences.")
     private boolean fullComparison;
 
-    @CommandLine.Option(names = "--count-has-value", description = "Count rows with values for --column-name.")
+    @CommandLine.Option(names = "--count-has-value", description = "Count rows with values for --column-name (use --verbose to print the rows).")
     private boolean countHasValue;
 
     @CommandLine.Option(names = "--substring", description = "Substring used to match values for --column-name.")
@@ -164,6 +164,7 @@ public class LoadFileService implements Callable<Integer> {
     private void columnComparison() throws IOException {
         System.out.println("Inventory for column: " + columnName);
 
+        // Value to paths is a map of actual value to file path of the native corresponding to the row which has the value.
         Map<String, List<String>> f1ValueToPaths = new HashMap<>();
         Map<String, List<String>> f2ValueToPaths = new HashMap<>();
         compareInventoryCounts(getValueToCountMap(datPath1, columnName, f1ValueToPaths), getValueToCountMap(datPath2, columnName, f2ValueToPaths), f1ValueToPaths, f2ValueToPaths, true);
@@ -316,50 +317,50 @@ public class LoadFileService implements Callable<Integer> {
     private boolean compareInventoryCounts(LinkedHashMap<String, Integer> f1ValuesToCount, LinkedHashMap<String, Integer> f2ValuesToCount,
                                         Map<String, List<String>> f1ValueToPaths, Map<String, List<String>> f2ValueToPaths, boolean print) {
         boolean matches = true;
-        List<String> f1MinusF2 = new ArrayList<>(f1ValuesToCount.keySet());
-        f1MinusF2.removeAll(f2ValuesToCount.keySet());
+        List<String> f1Unique = new ArrayList<>(f1ValuesToCount.keySet());
+        f1Unique.removeAll(f2ValuesToCount.keySet());
 
-        List<String> f2MinusF1 = new ArrayList<>(f2ValuesToCount.keySet());
-        f2MinusF1.removeAll(f1ValuesToCount.keySet());
+        List<String> f2Unique = new ArrayList<>(f2ValuesToCount.keySet());
+        f2Unique.removeAll(f1ValuesToCount.keySet());
 
-        if (!f1MinusF2.isEmpty()) {
+        if (!f1Unique.isEmpty()) {
             matches = false;
 
             if (print) {
-                System.out.println(String.format("\nFound only in --path-1 (%s):", f1MinusF2.size()));
+                System.out.println(String.format("\nFound only in --path-1 (%s):", f1Unique.size()));
 
                 int printed = 0;
 
-                for (String f1Only : f1MinusF2) {
+                for (String value : f1Unique) {
                     if (truncate != 0 && printed > truncate) {
                         break;
                     }
 
                     printed++;
 
-                    System.out.println(String.format("(%s) %s, Paths: [%s]", f1ValuesToCount.get(f1Only), f1Only.isBlank() ? "[blank string]" : f1Only,
-                            f1ValueToPaths.get(f1Only).stream().collect(Collectors.joining(","))));
+                    System.out.println(String.format("(%s) %s, Paths: [%s]", f1ValuesToCount.get(value), value.isBlank() ? "[blank string]" : value,
+                            f1ValueToPaths.get(value).stream().collect(Collectors.joining(","))));
                 }
             }
         }
 
-        if (!f2MinusF1.isEmpty()) {
+        if (!f2Unique.isEmpty()) {
             matches = false;
 
             if (print) {
-                System.out.println(String.format("\nFound only in --path-2 (%s):", f2MinusF1.size()));
+                System.out.println(String.format("\nFound only in --path-2 (%s):", f2Unique.size()));
 
                 int printed = 0;
 
-                for (String f2Only : f2MinusF1) {
+                for (String value : f2Unique) {
                     if (truncate != 0 && printed > truncate) {
                         break;
                     }
 
                     printed++;
 
-                    System.out.println(String.format("(%s) %s, Paths: [%s]", f2ValuesToCount.get(f2Only), f2Only.isBlank() ? "[blank string]" : f2Only,
-                            f2ValueToPaths.get(f2Only).stream().collect(Collectors.joining(","))));
+                    System.out.println(String.format("(%s) %s, Paths: [%s]", f2ValuesToCount.get(value), value.isBlank() ? "[blank string]" : value,
+                            f2ValueToPaths.get(value).stream().collect(Collectors.joining(","))));
                 }
             }
         }
@@ -368,8 +369,8 @@ public class LoadFileService implements Callable<Integer> {
         intersection.addAll(f1ValuesToCount.keySet());
         intersection.addAll(f2ValuesToCount.keySet());
 
-        intersection.removeAll(f1MinusF2);
-        intersection.removeAll(f2MinusF1);
+        intersection.removeAll(f1Unique);
+        intersection.removeAll(f2Unique);
 
         List<String> intersectionList = new ArrayList<>(intersection);
         intersectionList.sort((h1, h2) -> {
@@ -382,7 +383,8 @@ public class LoadFileService implements Callable<Integer> {
             return compareTo;
         });
 
-        if (!(f1MinusF2.size() == f1ValuesToCount.size() && f2MinusF1.size() == f2ValuesToCount.size())) {
+        // This only values unique to each dat file are found.  There is no intersection of value.  So the block has nothing to print.
+        if (!(f1Unique.size() == f1ValuesToCount.size() && f2Unique.size() == f2ValuesToCount.size())) {
             if (print) {
                 System.out.println(String.format("\nIntersection comparison (%s):", intersectionList.size()));
             }
