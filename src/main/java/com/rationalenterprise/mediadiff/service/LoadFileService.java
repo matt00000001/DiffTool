@@ -741,6 +741,14 @@ public class LoadFileService implements Callable<Integer> {
         }
     }
 
+    /**
+     * Counts rows by presence of value for column.
+     * Also counts rows by absence of value for column.
+     *
+     * TODO: This method should do present and absent checks only.  The --substring check should be moved to the other method.
+     * @param valueExists
+     * @throws IOException
+     */
     private void countHasValues(boolean valueExists) throws IOException {
         try (BufferedReader br = Files.newBufferedReader(datPath1, StandardCharsets.UTF_8)) {
             String row = br.readLine();
@@ -772,10 +780,10 @@ public class LoadFileService implements Callable<Integer> {
 
                 if (valueExists && !values[headerIndex].isBlank()) {
                     if (substring.isEmpty() || (!substring.isEmpty() && values[headerIndex].contains(substring))) {
-                        results.add(verbose ? row + "\n" : values[idIndex]);
+                        results.add(row);
                     }
                 } else if (!valueExists && values[headerIndex].isBlank()) {
-                    results.add(verbose ? row + "\n" : values[idIndex]);
+                    results.add(row);
                 }
             }
 
@@ -787,7 +795,7 @@ public class LoadFileService implements Callable<Integer> {
                 System.out.println(String.format("%s rows found %s %s for %s", results.size(), valueExists ? "with" : "without", (substring.isEmpty() ? "values" : "substring " + substring), columnName));
 
                 if (verbose) {
-                    System.out.println(header + "\n" + results.stream().collect(Collectors.joining(", ")));
+                    System.out.println(header + "\n" + results.stream().collect(Collectors.joining("\n")));
                 }
             }
         }
@@ -875,6 +883,16 @@ public class LoadFileService implements Callable<Integer> {
         System.out.println(String.format("Has value in --path-2 and not in --path-1 (%s):\n%s", f2HasValueMinusf1HasValue.size(), f2HasValueMinusf1HasValue.stream().collect(Collectors.joining("\n"))));
     }
 
+    /**
+     * Prints the rows that have a value that equal --value for the column specified by --column-name.
+     *
+     * TODO: countHasValue does the the --substring check.  That method should do present and absent check only.  This method should do exact value and substring comparisons.
+     * TODO: rename this method.
+     * TODO: add --verbose flag and maybe --truncate flag (or add functionality to log results to file.)
+     *
+     * Writing the results to a file is just another form of storing data.  We store data in the db, es, redis, report files, emails to user, and print results to user.
+     * @throws IOException
+     */
     private void printRow() throws IOException {
         try (BufferedReader br = Files.newBufferedReader(datPath1, StandardCharsets.UTF_8)) {
             String row = br.readLine();
