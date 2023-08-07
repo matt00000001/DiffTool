@@ -201,18 +201,20 @@ public class LoadFileService implements Callable<Integer> {
             while ((row = br.readLine()) != null) {
                 String[] values = t.reset(row).getTokenArray();
 
-                // Increment the value occurrence count.
-                valueToCount.put(values[columnIndex], valueToCount.getOrDefault(values[columnIndex], 0) + 1);
+                if (!values[columnIndex].isBlank()) {
+                    // Increment the value occurrence count.
+                    valueToCount.put(values[columnIndex], valueToCount.getOrDefault(values[columnIndex], 0) + 1);
 
-                if (!valueToPath.containsKey(values[columnIndex])) {
-                    valueToPath.put(values[columnIndex], new ArrayList<>());
+                    if (!valueToPath.containsKey(values[columnIndex])) {
+                        valueToPath.put(values[columnIndex], new ArrayList<>());
+                    }
+
+                    // Determine the correct file separator (linux or windows).
+                    String fileSeparator = values[pathIndex].contains("/") ? "/" : "\\";
+
+                    // Store the path to the native for logging info to the user.
+                    valueToPath.get(values[columnIndex]).add(values[pathIndex].isBlank() ? values[pathIndex] : values[pathIndex].substring(values[pathIndex].lastIndexOf(fileSeparator)));
                 }
-
-                // Determine the correct file separator (linux or windows).
-                String fileSeparator = values[pathIndex].contains("/") ? "/" : "\\";
-
-                // Store the path to the native for logging info to the user.
-                valueToPath.get(values[columnIndex]).add(values[pathIndex].isBlank() ? values[pathIndex] : values[pathIndex].substring(values[pathIndex].lastIndexOf(fileSeparator)));
             }
         }
 
